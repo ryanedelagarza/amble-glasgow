@@ -2,7 +2,7 @@ workflows:
   ios-release:
     name: iOS Release
     integrations:
-      app_store_connect: Ryan ID
+      app_store_connect: AmbleKey
     max_build_duration: 120
     instance_type: mac_mini_m1
     environment:
@@ -16,27 +16,35 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Set up keychain
+      - name: Initialize Keychain
+        script: keychain initialize
+      
+      - name: Fetch Signing Files
         script: |
-          keychain initialize
-      - name: Fetch signing files
-        script: |
-          app-store-connect fetch-signing-files "$APP_ID" --type IOS_APP_STORE --create
+          # Retrieve the bundle ID dynamically
+          APP_ID=$(xcode-project detect-bundle-id)
+          
+          # Fetch provisioning profiles and certs. 
+          # The --create flag forces a new cert if a valid one is missing.
+          app-store-connect fetch-signing-files "$APP_ID" \
+            --type IOS_APP_STORE \
+            --create
+            
       - name: Set up signing certificate
         script: |
           keychain add-certificates
-      - name: Increment build number
-        script: |
-          agvtool new-version -all $(($BUILD_NUMBER + 1))
-      - name: Install dependencies
+
+      - name: Install Dependencies
         script: |
           flutter pub get
           find . -name "Podfile" -execdir pod install \;
+
       - name: Build IPA
         script: |
+          # Build the archive using the provisioning profile we just fetched
           flutter build ipa --release \
             --export-options-plist=/Users/builder/export_options.plist \
-            --dart-define=API_KEY=$GEMINI_API_KEY # Ensure GEMINI_API_KEY is set in Codemagic env vars
+            --dart-define=API_KEY=$GEMINI_API_KEY
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
