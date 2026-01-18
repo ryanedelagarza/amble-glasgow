@@ -18,7 +18,7 @@ export const getVibeCheck = async (place: Place, userBio: string): Promise<strin
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash-exp',
       contents: prompt,
     });
     return response.text || "This spot is a local favorite.";
@@ -59,7 +59,7 @@ export const getExploreRecommendations = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash-exp',
       contents: userQuery,
       config: {
         systemInstruction: systemInstruction,
