@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amble - Glasgow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+    <style>
+      /* Custom scrollbar for chat */
+      .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+      }
+      .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+      /* Map Marker Styles */
+      .custom-pin {
+        background: transparent;
+        border: none;
+      }
+      .pin-inner {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        border: 2px solid white;
+        transition: transform 0.2s;
+      }
+      .pin-inner:hover {
+        transform: scale(1.1);
+      }
+      .pin-triangle {
+        position: absolute;
+        bottom: -6px;
+        left: 50%;
+        margin-left: -6px;
+        width: 0;
+        height: 0;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-top: 8px solid white; 
+      }
+      .pin-inner::after {
+        content: '';
+        position: absolute;
+        bottom: -8px;
+        left: 50%;
+        margin-left: -6px;
+        width: 0;
+        height: 0;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-top: 8px solid inherit; /* Inherits the border color of the parent for the triangle tip logic, strictly simplified here */
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-50 text-slate-900 antialiased h-screen overflow-hidden selection:bg-amber-100 selection:text-amber-900">
+    <div id="root" class="h-full flex flex-col max-w-md mx-auto bg-white shadow-2xl relative"></div>
+  </body>
+</html>

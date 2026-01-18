@@ -1,0 +1,7 @@
+{
+  "name": "Amble",
+  "description": "A context-aware travel concierge app for Glasgow, solving decision paralysis through intentional wandering.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
