@@ -19,19 +19,25 @@ workflows:
       - name: Initialize Keychain
         script: keychain initialize
       
-      - name: Fetch Signing Files
+      - name: Fetch Signing Files (The Cleaner)
         script: |
           APP_ID="com.delagarza.scout"
           
-          echo "Step 1: Nuke existing certificates..."
-          # This command attempts to revoke any existing distribution certs
-          # so we start with a truly clean slate.
-          app-store-connect certificates revoke \
-            --type IOS_DISTRIBUTION \
-            --all || echo "No certificates found to revoke (Safe to continue)"
+          echo "--- STEP 1: INSPECT ACCOUNT ---"
+          # List all existing certificates to the log so we can see them
+          app-store-connect certificates list --type IOS_DISTRIBUTION > certs_list.txt
+          cat certs_list.txt
           
-          echo "Step 2: Create fresh signing files..."
-          # Now we create a new one from scratch
+          echo "--- STEP 2: CLEAN ZOMBIES ---"
+          # This command finds lines with "ID:", grabs the ID code, and deletes it.
+          # This clears the "Max 3 Certificates" limit on your Apple account.
+          grep "ID:" certs_list.txt | awk '{print $2}' | while read -r CERT_ID; do
+            echo "Deleting Zombie Certificate: $CERT_ID"
+            app-store-connect certificates delete --id "$CERT_ID"
+          done
+          
+          echo "--- STEP 3: FRESH START ---"
+          # Now that the account is clean, we create a fresh one.
           app-store-connect fetch-signing-files "$APP_ID" \
             --type IOS_APP_STORE \
             --create
