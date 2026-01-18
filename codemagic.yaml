@@ -21,7 +21,22 @@ workflows:
       
       - name: Install CocoaPods dependencies
         script: |
-          cd ios && pod install
+          # Generate iOS project files if needed
+          flutter precache --ios
+          
+          # Navigate to iOS directory and install pods
+          cd ios
+          
+          # Generate Podfile if it doesn't exist
+          if [ ! -f "Podfile" ]; then
+            echo "Podfile not found, running flutter build to generate..."
+            cd ..
+            flutter build ios --config-only
+            cd ios
+          fi
+          
+          # Install pods
+          pod install
       
       - name: Set up code signing
         script: |
