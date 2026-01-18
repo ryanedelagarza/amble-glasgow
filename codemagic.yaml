@@ -2,7 +2,7 @@ workflows:
   ios-release:
     name: iOS Release
     integrations:
-      app_store_connect: AmbleKey
+      app_store_connect: Ryan ID
     max_build_duration: 120
     instance_type: mac_mini_m1
     environment:
