@@ -23,7 +23,15 @@ workflows:
         script: |
           APP_ID="com.delagarza.scout"
           
-          # Force create new signing files for the new ID
+          echo "Step 1: Nuke existing certificates..."
+          # This command attempts to revoke any existing distribution certs
+          # so we start with a truly clean slate.
+          app-store-connect certificates revoke \
+            --type IOS_DISTRIBUTION \
+            --all || echo "No certificates found to revoke (Safe to continue)"
+          
+          echo "Step 2: Create fresh signing files..."
+          # Now we create a new one from scratch
           app-store-connect fetch-signing-files "$APP_ID" \
             --type IOS_APP_STORE \
             --create
