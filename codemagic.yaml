@@ -16,49 +16,34 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Initialize Keychain (CRITICAL)
+      - name: Setup Identity and Build
         script: |
-          # This creates the local "wallet" to hold the private keys.
-          # Without this, certificate creation fails instantly.
+          set -e # Stop script immediately if any command fails
+          
+          echo "--- STEP 1: INITIALIZE KEYCHAIN (IN CONTEXT) ---"
+          # We initialize the keychain in THIS shell so the session persists
           keychain initialize
+          
+          echo "--- STEP 2: ADD APPLE INTERMEDIATE CERT ---"
+          # A common cause of "Cannot Save" errors is a missing WWDR certificate.
+          # We manually fetch and install it to be safe.
+          curl -o AppleWWDRCAG3.cer https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+          keychain add-certificates AppleWWDRCAG3.cer
 
-      - name: Clean Up and Create Identity
-        script: |
+          echo "--- STEP 3: CREATE IDENTITY ---"
           APP_ID="com.delagarza.scout"
           
-          echo "--- STEP 1: REMOVE STALE PROFILES ---"
-          # List all profiles to a file (fixing the invalid --filter argument)
-          app-store-connect profiles list > profiles_dump.txt
-          
-          # Manually find profiles for our App ID and delete them
-          grep "$APP_ID" profiles_dump.txt | awk '{print $1}' | while read -r PROF_ID; do
-            echo "Deleting Profile: $PROF_ID"
-            app-store-connect profiles delete --id "$PROF_ID" || echo "Checking next..."
-          done
-
-          echo "--- STEP 2: REMOVE STALE CERTS ---"
-          # List all certs
-          app-store-connect certificates list > certs_dump.txt
-          
-          # Delete any Distribution certs found to force a new one
-          grep "Distribution" certs_dump.txt | awk '{print $1}' | while read -r CERT_ID; do
-            echo "Deleting Cert: $CERT_ID"
-            app-store-connect certificates delete --id "$CERT_ID" || echo "Checking next..."
-          done
-
-          echo "--- STEP 3: CREATE NEW IDENTITY ---"
-          # Now that Keychain is active and old data is gone, create fresh.
+          # Now we create the certs. Because we are in the same shell as Step 1,
+          # it has access to the unlocked keychain to save the private key.
           app-store-connect fetch-signing-files "$APP_ID" \
             --type IOS_APP_STORE \
             --create
-
-      - name: Install Dependencies
-        script: |
-          flutter packages get
+            
+          echo "--- STEP 4: INSTALL DEPENDENCIES ---"
+          flutter pub get
           find . -name "Podfile" -execdir pod install \;
 
-      - name: Build IPA
-        script: |
+          echo "--- STEP 5: BUILD IPA ---"
           flutter build ipa --release \
             --export-options-plist=/Users/builder/export_options.plist \
             --dart-define=API_KEY=$GEMINI_API_KEY
