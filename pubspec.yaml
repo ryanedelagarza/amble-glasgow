@@ -1,0 +1,36 @@
+name: amble
+description: A context-aware travel concierge app for Glasgow.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # State Management
+  flutter_riverpod: ^2.4.9
+  
+  # Maps & Location
+  google_maps_flutter: ^2.5.0
+  geolocator: ^10.1.0
+  
+  # AI & Data
+  google_generative_ai: ^0.2.0
+  
+  # Utilities
+  url_launcher: ^6.2.4
+  cached_network_image: ^3.3.1
+  
+  # UI
+  cupertino_icons: ^1.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,47 @@
+workflows:
+  ios-release:
+    name: iOS Release
+    max_build_duration: 120
+    instance_type: mac_mini_m1
+    environment:
+      groups:
+        - app_store_connect # Assumes you created this group in Codemagic UI with Issuer ID, Key ID, and Private Key
+      vars:
+        XCODE_WORKSPACE: "ios/Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+        APP_ID: "com.example.amble" # Replace with your Bundle ID
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Set up keychain
+        script: |
+          keychain initialize
+      - name: Fetch signing files
+        script: |
+          app-store-connect fetch-signing-files "$APP_ID" --type IOS_APP_STORE --create
+      - name: Set up signing certificate
+        script: |
+          keychain add-certificates
+      - name: Increment build number
+        script: |
+          agvtool new-version -all $(($BUILD_NUMBER + 1))
+      - name: Install dependencies
+        script: |
+          flutter pub get
+          find . -name "Podfile" -execdir pod install \;
+      - name: Build IPA
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist \
+            --dart-define=API_KEY=$GEMINI_API_KEY # Ensure GEMINI_API_KEY is set in Codemagic env vars
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups: # Specify the names of beta tester groups
+          - "Internal Testers"
