@@ -25,15 +25,13 @@ workflows:
           
           # Update iOS deployment target to 14.0
           sed -i '' 's/platform :ios, '\''[0-9.]*'\''/platform :ios, '\''14.0'\''/' ios/Podfile
-          
-          # Also update in Xcode project
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 14.0;/g' ios/Runner.xcodeproj/project.pbxproj
           
           # Remove hardcoded provisioning profile specifiers
           sed -i '' '/PROVISIONING_PROFILE_SPECIFIER/d' ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = 3ZB62C422U;/g' ios/Runner.xcodeproj/project.pbxproj
           
-          # Create Info.plist directly
+          # Create Info.plist
           cat > ios/Runner/Info.plist << 'INFOPLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -88,43 +86,77 @@ workflows:
           </plist>
           INFOPLIST
           
-          # Get dependencies
           flutter pub get
       
       - name: Set up code signing
         script: |
-          # Apply profiles
           xcode-project use-profiles
           
-          # Debug: Check what profiles are available
-          echo "=== Provisioning profiles ==="
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
-          
-          # Get the actual profile that was installed
+          # Find and extract provisioning profile info
           PROFILE_PATH=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -1)
           
-          if [ -n "$PROFILE_PATH" ]; then
-            echo "Using profile: $PROFILE_PATH"
-            # Get profile name
-            PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< $(security cms -D -i "$PROFILE_PATH"))
-            echo "Profile name: $PROFILE_NAME"
-          fi
-      
-      - name: Build iOS app
-        script: |
-          # Let Flutter handle everything - it should use the profiles installed by xcode-project use-profiles
-          flutter build ipa --release
-          
-          # Verify IPA was created
-          echo "=== Checking for IPA file ==="
-          if [ -d "build/ios/ipa" ]; then
-            ls -lh build/ios/ipa/
-          else
-            echo "ERROR: IPA directory not created"
-            echo "Checking archive..."
-            ls -lh build/ios/archive/ || echo "No archive either!"
+          if [ -z "$PROFILE_PATH" ]; then
+            echo "ERROR: No provisioning profile found!"
             exit 1
           fi
+          
+          echo "Found profile: $PROFILE_PATH"
+          
+          # Decode and extract UUID
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i "$PROFILE_PATH"))
+          
+          echo "Profile UUID: $PROFILE_UUID"
+          
+          # Create ExportOptions.plist
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          	<key>method</key>
+          	<string>app-store</string>
+          	<key>teamID</key>
+          	<string>3ZB62C422U</string>
+          	<key>signingStyle</key>
+          	<string>manual</string>
+          	<key>provisioningProfiles</key>
+          	<dict>
+          		<key>com.delagarza.scout</key>
+          		<string>$PROFILE_UUID</string>
+          	</dict>
+          </dict>
+          </plist>
+          EOF
+          
+          cat ExportOptions.plist
+      
+      - name: Build archive
+        script: |
+          flutter build ios --release --no-codesign
+      
+      - name: Create signed archive and export IPA
+        script: |
+          cd ios
+          
+          # Create archive with signing
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -archivePath ../build/ios/archive/Runner.xcarchive \
+            archive
+          
+          # Export IPA
+          xcodebuild -exportArchive \
+            -archivePath ../build/ios/archive/Runner.xcarchive \
+            -exportPath ../build/ios/ipa \
+            -exportOptionsPlist ../ExportOptions.plist \
+            -allowProvisioningUpdates
+          
+          cd ..
+          
+          # Verify
+          echo "=== IPA Created ==="
+          ls -lh build/ios/ipa/
     
     artifacts:
       - build/ios/ipa/*.ipa
