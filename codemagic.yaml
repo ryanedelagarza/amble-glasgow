@@ -15,28 +15,13 @@ workflows:
       cocoapods: default
     
     scripts:
-      - name: Get Flutter packages
+      - name: Set up iOS platform
         script: |
+          # Generate iOS platform files
+          flutter create --platforms=ios .
+          
+          # Get dependencies
           flutter pub get
-      
-      - name: Install CocoaPods dependencies
-        script: |
-          # Generate iOS project files if needed
-          flutter precache --ios
-          
-          # Navigate to iOS directory and install pods
-          cd ios
-          
-          # Generate Podfile if it doesn't exist
-          if [ ! -f "Podfile" ]; then
-            echo "Podfile not found, running flutter build to generate..."
-            cd ..
-            flutter build ios --config-only
-            cd ios
-          fi
-          
-          # Install pods
-          pod install
       
       - name: Set up code signing
         script: |
@@ -44,8 +29,7 @@ workflows:
       
       - name: Build iOS app
         script: |
-          flutter build ipa --release \
-            --export-options-plist=/Users/builder/export_options.plist
+          flutter build ipa --release
     
     artifacts:
       - build/ios/ipa/*.ipa
