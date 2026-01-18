@@ -29,6 +29,10 @@ workflows:
           # Also update in Xcode project
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 14.0;/g' ios/Runner.xcodeproj/project.pbxproj
           
+          # Remove hardcoded provisioning profile specifiers
+          sed -i '' '/PROVISIONING_PROFILE_SPECIFIER/d' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = 3ZB62C422U;/g' ios/Runner.xcodeproj/project.pbxproj
+          
           # Create Info.plist directly
           cat > ios/Runner/Info.plist << 'INFOPLIST'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -89,51 +93,41 @@ workflows:
       
       - name: Set up code signing
         script: |
+          # Apply profiles
           xcode-project use-profiles
           
-          # Get the provisioning profile UUID
+          # Debug: Check what profiles are available
+          echo "=== Provisioning profiles ==="
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
+          
+          # Get the actual profile that was installed
           PROFILE_PATH=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -1)
-          PROFILE_UUID=$(grep -a -A 1 'UUID' "$PROFILE_PATH" | grep string | sed -e 's/<string>//' -e 's/<\/string>//' -e 's/^[ \t]*//')
           
-          echo "Found provisioning profile UUID: $PROFILE_UUID"
-          
-          # Create export options plist
-          cat > ios/ExportOptions.plist <<EXPORTPLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-          	<key>method</key>
-          	<string>app-store</string>
-          	<key>teamID</key>
-          	<string>3ZB62C422U</string>
-          	<key>uploadSymbols</key>
-          	<true/>
-          	<key>compileBitcode</key>
-          	<false/>
-          	<key>provisioningProfiles</key>
-          	<dict>
-          		<key>com.delagarza.scout</key>
-          		<string>$PROFILE_UUID</string>
-          	</dict>
-          </dict>
-          </plist>
-          EXPORTPLIST
-          
-          echo "Created ExportOptions.plist with profile: $PROFILE_UUID"
+          if [ -n "$PROFILE_PATH" ]; then
+            echo "Using profile: $PROFILE_PATH"
+            # Get profile name
+            PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /dev/stdin <<< $(security cms -D -i "$PROFILE_PATH"))
+            echo "Profile name: $PROFILE_NAME"
+          fi
       
       - name: Build iOS app
         script: |
-          # Build archive
-          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+          # Let Flutter handle everything - it should use the profiles installed by xcode-project use-profiles
+          flutter build ipa --release
           
           # Verify IPA was created
           echo "=== Checking for IPA file ==="
-          ls -lh build/ios/ipa/ || echo "IPA directory not found"
+          if [ -d "build/ios/ipa" ]; then
+            ls -lh build/ios/ipa/
+          else
+            echo "ERROR: IPA directory not created"
+            echo "Checking archive..."
+            ls -lh build/ios/archive/ || echo "No archive either!"
+            exit 1
+          fi
     
     artifacts:
       - build/ios/ipa/*.ipa
-      - build/ios/archive/*.xcarchive
       - /tmp/xcodebuild_logs/*.log
     
     publishing:
