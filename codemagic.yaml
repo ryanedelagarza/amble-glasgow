@@ -11,7 +11,7 @@ workflows:
       vars:
         XCODE_WORKSPACE: "ios/Runner.xcworkspace"
         XCODE_SCHEME: "Runner"
-        APP_ID: "com.example.amble" # Replace with your Bundle ID
+        APP_ID: "com.delagarza.amble" # Hardcoded ID
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -21,8 +21,10 @@ workflows:
       
       - name: Fetch Signing Files
         script: |
-          # Retrieve the bundle ID dynamically
-          APP_ID=$(xcode-project detect-bundle-id)
+          # HARDCODED ID to prevent detection errors
+          APP_ID="com.delagarza.amble"
+          
+          echo "Fetching signing files for $APP_ID..."
           
           # Fetch provisioning profiles and certs. 
           # The --create flag forces a new cert if a valid one is missing.
