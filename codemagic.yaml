@@ -80,7 +80,18 @@ workflows:
       
       - name: Set up code signing
         script: |
+          # Debug: Check what certificates are available
+          echo "=== Checking for certificates in Codemagic ==="
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ || echo "No provisioning profiles directory"
+          
+          echo "=== Checking keychain ==="
+          security find-identity -v -p codesigning
+          
+          echo "=== Running xcode-project use-profiles ==="
           xcode-project use-profiles
+          
+          echo "=== Checking bundle ID in Xcode project ==="
+          grep -A 5 "PRODUCT_BUNDLE_IDENTIFIER" ios/Runner.xcodeproj/project.pbxproj
       
       - name: Build iOS app
         script: |
