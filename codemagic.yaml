@@ -12,6 +12,10 @@ workflows:
         BUNDLE_ID: "com.delagarza.scout"
         # Map the private key to the name Codemagic's publisher expects
         APP_STORE_CONNECT_PUBLISHER_PRIVATE_KEY: $APP_STORE_CONNECT_PRIVATE_KEY
+        # Google AI API Key for Gemini service
+        GOOGLE_AI_API_KEY: $GOOGLE_AI_API_KEY
+        # Google Maps API Key for iOS Maps SDK
+        GOOGLE_MAPS_API_KEY: $GOOGLE_MAPS_API_KEY
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -101,6 +105,25 @@ workflows:
           </plist>
           INFOPLIST
           
+          # Configure Google Maps SDK in AppDelegate.swift
+          cat > ios/Runner/AppDelegate.swift << APPDELEGATE
+          import UIKit
+          import Flutter
+          import GoogleMaps
+          
+          @UIApplicationMain
+          @objc class AppDelegate: FlutterAppDelegate {
+            override func application(
+              _ application: UIApplication,
+              didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+            ) -> Bool {
+              GMSServices.provideAPIKey("$GOOGLE_MAPS_API_KEY")
+              GeneratedPluginRegistrant.register(with: self)
+              return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+            }
+          }
+          APPDELEGATE
+          
           flutter pub get
       
       - name: Set up code signing
@@ -147,7 +170,7 @@ workflows:
       
       - name: Build archive
         script: |
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign --dart-define=API_KEY=$GOOGLE_AI_API_KEY
       
       - name: Create signed archive and export IPA
         script: |

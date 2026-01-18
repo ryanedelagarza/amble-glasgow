@@ -1,7 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { Place } from '../types';
 
-const getAiClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+// For Vite, environment variables must be prefixed with VITE_ and accessed via import.meta.env
+const getAiClient = () => new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_AI_API_KEY });
 
 export const getVibeCheck = async (place: Place, userBio: string): Promise<string> => {
   const ai = getAiClient();
@@ -17,7 +18,7 @@ export const getVibeCheck = async (place: Place, userBio: string): Promise<strin
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-1.5-flash',
       contents: prompt,
     });
     return response.text || "This spot is a local favorite.";
@@ -58,7 +59,7 @@ export const getExploreRecommendations = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-1.5-flash',
       contents: userQuery,
       config: {
         systemInstruction: systemInstruction,
