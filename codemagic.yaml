@@ -11,7 +11,7 @@ workflows:
       vars:
         XCODE_WORKSPACE: "ios/Runner.xcworkspace"
         XCODE_SCHEME: "Runner"
-        APP_ID: "com.delagarza.amble" # Hardcoded ID
+        APP_ID: "com.delagarza.scout" # Hardcoded ID
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -21,13 +21,9 @@ workflows:
       
       - name: Fetch Signing Files
         script: |
-          # HARDCODED ID to prevent detection errors
-          APP_ID="com.delagarza.amble"
+          APP_ID="com.delagarza.scout"
           
-          echo "Fetching signing files for $APP_ID..."
-          
-          # Fetch provisioning profiles and certs. 
-          # The --create flag forces a new cert if a valid one is missing.
+          # Force create new signing files for the new ID
           app-store-connect fetch-signing-files "$APP_ID" \
             --type IOS_APP_STORE \
             --create
