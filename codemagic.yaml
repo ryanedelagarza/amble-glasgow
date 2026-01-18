@@ -90,14 +90,46 @@ workflows:
       - name: Set up code signing
         script: |
           xcode-project use-profiles
+          
+          # Get the provisioning profile UUID
+          PROFILE_PATH=$(ls ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | head -1)
+          PROFILE_UUID=$(grep -a -A 1 'UUID' "$PROFILE_PATH" | grep string | sed -e 's/<string>//' -e 's/<\/string>//' -e 's/^[ \t]*//')
+          
+          echo "Found provisioning profile UUID: $PROFILE_UUID"
+          
+          # Create export options plist
+          cat > ios/ExportOptions.plist <<EXPORTPLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+          	<key>method</key>
+          	<string>app-store</string>
+          	<key>teamID</key>
+          	<string>3ZB62C422U</string>
+          	<key>uploadSymbols</key>
+          	<true/>
+          	<key>compileBitcode</key>
+          	<false/>
+          	<key>provisioningProfiles</key>
+          	<dict>
+          		<key>com.delagarza.scout</key>
+          		<string>$PROFILE_UUID</string>
+          	</dict>
+          </dict>
+          </plist>
+          EXPORTPLIST
+          
+          echo "Created ExportOptions.plist with profile: $PROFILE_UUID"
       
       - name: Build iOS app
         script: |
-          flutter build ipa --release
+          # Build archive
+          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
           
           # Verify IPA was created
           echo "=== Checking for IPA file ==="
-          ls -lh build/ios/ipa/
+          ls -lh build/ios/ipa/ || echo "IPA directory not found"
     
     artifacts:
       - build/ios/ipa/*.ipa
