@@ -34,11 +34,18 @@ workflows:
           sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = 3ZB62C422U;/g' ios/Runner.xcodeproj/project.pbxproj
           
           # Create Info.plist
+          # Create Info.plist
           cat > ios/Runner/Info.plist << 'INFOPLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
+          	<key>NSLocationWhenInUseUsageDescription</key>
+          	<string>Amble uses your location to discover nearby attractions, restaurants, and experiences tailored to your journey.</string>
+          	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+          	<string>Amble uses your location to provide personalized travel recommendations and help you discover places near you.</string>
+          	<key>ITSAppUsesNonExemptEncryption</key>
+          	<false/>
           	<key>CFBundleDevelopmentRegion</key>
           	<string>$(DEVELOPMENT_LANGUAGE)</string>
           	<key>CFBundleDisplayName</key>
