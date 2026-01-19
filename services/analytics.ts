@@ -14,7 +14,10 @@ export type AnalyticsEvent =
   | { name: 'result_selected'; data: { position: number; placeId: string; placeName: string } }
   | { name: 'place_added'; data: { placeId: string; category: string; source: 'user' | 'curated' } }
   | { name: 'place_removed'; data: { placeId: string; category: string } }
-  | { name: 'search_error'; data: { errorType: string; errorMessage: string } };
+  | { name: 'search_error'; data: { errorType: string; errorMessage: string } }
+  | { name: 'category_modal_shown'; data: { placeName: string; suggestedCategory: string } }
+  | { name: 'category_changed'; data: { placeName: string; suggestedCategory: string; selectedCategory: string } }
+  | { name: 'duplicate_detected'; data: { placeId: string; placeName: string; category: string } };
 
 // Configuration
 const ANALYTICS_ENABLED = true;
@@ -111,6 +114,27 @@ export const analytics = {
     track({ 
       name: 'search_error', 
       data: { errorType, errorMessage } 
+    });
+  },
+
+  categoryModalShown: (placeName: string, suggestedCategory: string) => {
+    track({
+      name: 'category_modal_shown',
+      data: { placeName, suggestedCategory }
+    });
+  },
+
+  categoryChanged: (placeName: string, suggestedCategory: string, selectedCategory: string) => {
+    track({
+      name: 'category_changed',
+      data: { placeName, suggestedCategory, selectedCategory }
+    });
+  },
+
+  duplicateDetected: (placeId: string, placeName: string, category: string) => {
+    track({
+      name: 'duplicate_detected',
+      data: { placeId, placeName, category }
     });
   },
 };

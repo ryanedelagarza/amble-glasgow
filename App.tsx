@@ -201,6 +201,104 @@ const DeleteConfirmModal: React.FC<{
   </div>
 );
 
+const CategoryConfirmModal: React.FC<{
+  placeName: string;
+  suggestedCategory: Category;
+  onConfirm: (category: Category) => void;
+  onCancel: () => void;
+}> = ({ placeName, suggestedCategory, onConfirm, onCancel }) => {
+  const [selectedCategory, setSelectedCategory] = useState<Category>(suggestedCategory);
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      
+      {/* Modal */}
+      <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex flex-col">
+          <h3 className="text-xl font-bold text-slate-900 mb-2">Add to Collection?</h3>
+          <p className="text-sm text-slate-500 mb-4">
+            <span className="font-semibold text-slate-700">{placeName}</span> will be added to:
+          </p>
+          
+          {/* Category Selection */}
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            {(['Food', 'Coffee', 'Shopping', 'Sites'] as Category[]).map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`py-3 px-4 rounded-xl font-bold text-sm transition-all ${
+                  selectedCategory === cat
+                    ? 'bg-slate-900 text-white shadow-md'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+          
+          <div className="flex gap-3">
+            <button
+              onClick={onCancel}
+              className="flex-1 py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onConfirm(selectedCategory)}
+              className="flex-1 py-3 px-4 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors"
+            >
+              Add to {selectedCategory}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DuplicateModal: React.FC<{
+  place: Place;
+  onViewPlace: () => void;
+  onSearchAgain: () => void;
+}> = ({ place, onViewPlace, onSearchAgain }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+    {/* Backdrop */}
+    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onSearchAgain} />
+    
+    {/* Modal */}
+    <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="flex flex-col items-center text-center">
+        <div className="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+          <Star className="w-7 h-7 text-amber-600 fill-amber-600" />
+        </div>
+        
+        <h3 className="text-xl font-bold text-slate-900 mb-2">Already in Your Collection</h3>
+        <p className="text-sm text-slate-500 mb-6">
+          <span className="font-semibold text-slate-700">{place.name}</span> is already saved in <span className="font-semibold text-slate-700">{place.category}</span>.
+        </p>
+        
+        <div className="flex gap-3 w-full">
+          <button
+            onClick={onSearchAgain}
+            className="flex-1 py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+          >
+            Search Again
+          </button>
+          <button
+            onClick={onViewPlace}
+            className="flex-1 py-3 px-4 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors"
+          >
+            View Place
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const ImageGallery: React.FC<{ images: string[], name: string }> = ({ images, name }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -399,6 +497,23 @@ export default function App() {
   // Delete confirmation modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   
+  // Category confirmation modal state (Bug #1 fix)
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [selectedResult, setSelectedResult] = useState<GooglePlaceResult | null>(null);
+  const [suggestedCategory, setSuggestedCategory] = useState<Category>('Sites');
+  
+  // Duplicate detection modal state (Bug #2 fix)
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  
+  // Navigation context state (Bug #3 fix)
+  const [navContext, setNavContext] = useState<{
+    fromView?: 'ONBOARDING' | 'DASHBOARD' | 'LIST' | 'DETAIL' | 'EXPLORE' | 'MAP' | 'ADD_LOCATION';
+    preserveState?: {
+      searchResults?: GooglePlaceResult[];
+      searchQuery?: string;
+    };
+  }>({});
+  
   // Map Filters
   const [mapFilters, setMapFilters] = useState<Record<Category, boolean>>({
     Food: true,
@@ -570,6 +685,55 @@ export default function App() {
     setMapFilters(prev => ({ ...prev, [cat]: !prev[cat] }));
   };
 
+  // Navigation helpers (Bug #3 fix)
+  const navigateToView = (
+    newView: 'ONBOARDING' | 'DASHBOARD' | 'LIST' | 'DETAIL' | 'EXPLORE' | 'MAP' | 'ADD_LOCATION',
+    options?: {
+      preserveSearchState?: boolean;
+    }
+  ) => {
+    // Save current context before navigating
+    const context: typeof navContext = {
+      fromView: view,
+    };
+    
+    // If leaving ADD_LOCATION, preserve search state if requested
+    if (view === 'ADD_LOCATION' && options?.preserveSearchState) {
+      context.preserveState = {
+        searchResults,
+        searchQuery,
+      };
+    }
+    
+    setNavContext(context);
+    setView(newView);
+  };
+
+  const navigateBack = () => {
+    const { fromView, preserveState } = navContext;
+    
+    // If we have a recorded previous view, go there
+    if (fromView) {
+      setView(fromView);
+      
+      // Restore preserved state if returning to ADD_LOCATION
+      if (fromView === 'ADD_LOCATION' && preserveState) {
+        if (preserveState.searchResults) {
+          setSearchResults(preserveState.searchResults);
+        }
+        if (preserveState.searchQuery) {
+          setSearchQuery(preserveState.searchQuery);
+        }
+      }
+      
+      // Clear context after using it
+      setNavContext({});
+    } else {
+      // Fallback to dashboard if no context
+      setView('DASHBOARD');
+    }
+  };
+
   // Add Location Handlers
   const handleSearch = async () => {
     if (searchQuery.trim().length < 2) return;
@@ -674,32 +838,54 @@ export default function App() {
     // Track result selection
     analytics.resultSelected(position + 1, result.place_id, result.name);
     
-    // Check if place already exists
+    // Check if place already exists (Bug #2 fix)
     const existingPlace = allPlaces.find(p => p.googlePlaceId === result.place_id);
     if (existingPlace) {
-      setSearchError('This place is already in your collection!');
+      // Track duplicate detection
+      analytics.duplicateDetected(existingPlace.id, existingPlace.name, existingPlace.category);
+      
+      // Show friendly duplicate modal instead of error
+      setSelectedPlace(existingPlace);
+      setShowDuplicateModal(true);
       return;
     }
     
-    // Transform Google Place to our Place type
+    // Show category confirmation modal instead of immediately adding (Bug #1 fix)
     const category = assignCategory(result.types);
+    setSelectedResult(result);
+    setSuggestedCategory(category);
+    setShowCategoryModal(true);
+    
+    // Track modal shown
+    analytics.categoryModalShown(result.name, category);
+  };
+
+  const handleConfirmAdd = (confirmedCategory: Category) => {
+    if (!selectedResult) return;
+    
+    // Track if category was changed from suggestion
+    if (confirmedCategory !== suggestedCategory) {
+      analytics.categoryChanged(selectedResult.name, suggestedCategory, confirmedCategory);
+    }
+    
+    // Transform Google Place to our Place type
     const newPlace: Place = {
-      id: `user-${result.place_id}`,
-      name: result.name,
-      category: category,
-      description: result.formatted_address,
-      address: result.formatted_address,
+      id: `user-${selectedResult.place_id}`,
+      name: selectedResult.name,
+      category: confirmedCategory,
+      description: selectedResult.formatted_address,
+      address: selectedResult.formatted_address,
       coordinates: {
-        lat: result.geometry.location.lat,
-        lng: result.geometry.location.lng,
+        lat: selectedResult.geometry.location.lat,
+        lng: selectedResult.geometry.location.lng,
       },
       priority: false,
-      isOpen: result.opening_hours?.open_now,
-      images: result.photos && result.photos.length > 0
-        ? [getPhotoUrl(result.photos[0].photo_reference, 800)]
+      isOpen: selectedResult.opening_hours?.open_now,
+      images: selectedResult.photos && selectedResult.photos.length > 0
+        ? [getPhotoUrl(selectedResult.photos[0].photo_reference, 800)]
         : ['https://images.unsplash.com/photo-1486718448742-166226480961?auto=format&fit=crop&w=800&q=80'],
       source: 'user',
-      googlePlaceId: result.place_id,
+      googlePlaceId: selectedResult.place_id,
       addedAt: new Date().toISOString(),
     };
     
@@ -709,19 +895,21 @@ export default function App() {
     localStorage.setItem('amble_user_places', JSON.stringify(updatedPlaces));
     
     // Track place added
-    analytics.placeAdded(newPlace.id, category);
+    analytics.placeAdded(newPlace.id, confirmedCategory);
     
-    // Clear search state and navigate to the new place detail
-    setSearchQuery('');
-    setSearchResults([]);
+    // Close modal and clear selected result
+    setShowCategoryModal(false);
+    setSelectedResult(null);
+    
+    // Navigate to detail view with context preserved (Bug #3 fix)
     setSelectedPlace(newPlace);
-    setView('DETAIL');
+    navigateToView('DETAIL', { preserveSearchState: true });
     
     // Show success toast with option to add another
     setToast({
-      message: `Added to ${category}!`,
+      message: `Added to ${confirmedCategory}!`,
       action: () => {
-        setView('ADD_LOCATION');
+        navigateBack();
         setToast(null);
       },
       actionLabel: 'Add Another'
@@ -893,7 +1081,7 @@ export default function App() {
         {/* New Gallery Component replaces static image */}
         <div className="relative">
           <button 
-             onClick={() => setView('LIST')}
+             onClick={navigateBack}
              className="absolute top-4 left-4 z-20 p-2 bg-white/90 backdrop-blur rounded-full shadow-lg hover:bg-white"
            >
              <ArrowLeft className="w-6 h-6 text-slate-900" />
@@ -1335,6 +1523,34 @@ export default function App() {
           placeName={selectedPlace.name}
           onConfirm={handleDeletePlace}
           onCancel={() => setShowDeleteModal(false)}
+        />
+      )}
+
+      {/* Category Confirmation Modal (Bug #1 fix) */}
+      {showCategoryModal && selectedResult && (
+        <CategoryConfirmModal
+          placeName={selectedResult.name}
+          suggestedCategory={suggestedCategory}
+          onConfirm={handleConfirmAdd}
+          onCancel={() => {
+            setShowCategoryModal(false);
+            setSelectedResult(null);
+          }}
+        />
+      )}
+
+      {/* Duplicate Detection Modal (Bug #2 fix) */}
+      {showDuplicateModal && selectedPlace && (
+        <DuplicateModal
+          place={selectedPlace}
+          onViewPlace={() => {
+            setShowDuplicateModal(false);
+            navigateToView('DETAIL', { preserveSearchState: true });
+          }}
+          onSearchAgain={() => {
+            setShowDuplicateModal(false);
+            setSelectedPlace(null);
+          }}
         />
       )}
 

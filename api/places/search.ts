@@ -1,9 +1,19 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
 // Vercel Serverless Function to proxy Google Places API requests
 // This avoids CORS issues since the request is made server-side
 
 const PLACES_API_URL = 'https://maps.googleapis.com/maps/api/place';
+
+// Using inline types to avoid @vercel/node dependency
+interface VercelRequest {
+  method?: string;
+  query: Record<string, string | string[] | undefined>;
+}
+
+interface VercelResponse {
+  status: (code: number) => VercelResponse;
+  json: (data: unknown) => void;
+  setHeader: (name: string, value: string) => void;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Only allow GET requests
