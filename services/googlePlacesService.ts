@@ -1,5 +1,9 @@
 import { Coordinates, GooglePlaceResult, Category } from '../types';
 
+// Use our Vercel API route to proxy requests (avoids CORS issues)
+const PLACES_PROXY_URL = '/api/places/search';
+
+// Still need direct URL for photo references (images don't have CORS issues)
 const GOOGLE_PLACES_API_KEY = import.meta.env.VITE_GOOGLE_PLACES_API_KEY;
 const PLACES_API_URL = 'https://maps.googleapis.com/maps/api/place';
 
@@ -122,12 +126,12 @@ export async function searchPlaces(params: SearchPlacesParams): Promise<GooglePl
     throw new OfflineError();
   }
   
-  const url = new URL(`${PLACES_API_URL}/textsearch/json`);
+  // Use our API proxy to avoid CORS issues
+  // The proxy handles the Google Places API call server-side
+  const url = new URL(PLACES_PROXY_URL, window.location.origin);
   url.searchParams.append('query', query);
   url.searchParams.append('location', `${location.lat},${location.lng}`);
   url.searchParams.append('radius', radius.toString());
-  url.searchParams.append('key', GOOGLE_PLACES_API_KEY);
-  url.searchParams.append('region', 'uk'); // Bias to UK results
   
   // Retry configuration
   const maxRetries = 2;
