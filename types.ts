@@ -15,6 +15,36 @@ export interface Place {
   priority: boolean; // "Curator's Pick"
   isOpen?: boolean; // Mocked status
   images: string[]; // Array of image URLs
+  
+  // User-generated place fields
+  source?: 'curated' | 'user';        // Track origin
+  googlePlaceId?: string;             // Link to Google Places
+  addedAt?: string;                   // ISO timestamp
+}
+
+// Google Places API result type
+export interface GooglePlaceResult {
+  place_id: string;
+  name: string;
+  formatted_address: string;
+  geometry: {
+    location: {
+      lat: number;
+      lng: number;
+    };
+  };
+  photos?: Array<{
+    photo_reference: string;
+    height: number;
+    width: number;
+  }>;
+  types: string[];
+  rating?: number;
+  price_level?: number;
+  user_ratings_total?: number;
+  opening_hours?: {
+    open_now?: boolean;
+  };
 }
 
 export interface UserPreferences {

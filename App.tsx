@@ -15,7 +15,11 @@ import {
   Heart,
   X,
   Maximize2,
-  Map as MapIcon
+  Map as MapIcon,
+  Plus,
+  Search,
+  Loader,
+  AlertCircle
 } from 'lucide-react';
 import { 
   Place, 
@@ -23,11 +27,13 @@ import {
   DistanceMode, 
   UserPreferences, 
   Coordinates, 
-  ChatMessage 
+  ChatMessage,
+  GooglePlaceResult
 } from './types';
 import { PLACES, DEFAULT_BIO, HOTEL_COORDINATES } from './constants';
-import { calculateDistance, formatDistance } from './utils';
+import { calculateDistance, formatDistance, getWalkingMinutes } from './utils';
 import { getVibeCheck, getExploreRecommendations } from './services/geminiService';
+import { searchPlaces, getPhotoUrl, assignCategory } from './services/googlePlacesService';
 
 // --- Types for Leaflet (since we load it via CDN) ---
 declare global {
@@ -63,7 +69,7 @@ const PlaceListItem: React.FC<{
 }> = ({ place, distanceText, isFavorite, onClick }) => (
   <button 
     onClick={onClick}
-    className={`w-full bg-white rounded-xl p-4 flex items-center justify-between shadow-sm border-l-4 ${place.priority ? 'border-amber-400' : 'border-transparent'} hover:bg-slate-50 transition-colors mb-3`}
+    className={`w-full bg-white rounded-xl p-4 flex items-center justify-between shadow-sm border-l-4 ${place.priority ? 'border-amber-400' : place.source === 'user' ? 'border-blue-400' : 'border-transparent'} hover:bg-slate-50 transition-colors mb-3`}
   >
     <div className="flex flex-col items-start text-left w-full">
       <div className="flex items-center justify-between w-full">
@@ -71,6 +77,9 @@ const PlaceListItem: React.FC<{
            <h3 className="font-bold text-slate-800 text-lg">{place.name}</h3>
            {isFavorite && <Heart className="w-4 h-4 text-pink-500 fill-pink-500" />}
            {!isFavorite && place.priority && <Star className="w-4 h-4 text-amber-500 fill-amber-500" />}
+           {place.source === 'user' && (
+             <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Added</span>
+           )}
         </div>
         <ArrowLeft className="w-5 h-5 rotate-180 text-slate-300" />
       </div>
@@ -289,7 +298,7 @@ const MapView: React.FC<{
 
 export default function App() {
   // State
-  const [view, setView] = useState<'ONBOARDING' | 'DASHBOARD' | 'LIST' | 'DETAIL' | 'EXPLORE' | 'MAP'>('ONBOARDING');
+  const [view, setView] = useState<'ONBOARDING' | 'DASHBOARD' | 'LIST' | 'DETAIL' | 'EXPLORE' | 'MAP' | 'ADD_LOCATION'>('ONBOARDING');
   const [userBio, setUserBio] = useState(DEFAULT_BIO);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -298,6 +307,15 @@ export default function App() {
   const [vibeCheckLoading, setVibeCheckLoading] = useState(false);
   const [vibeCheckResult, setVibeCheckResult] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<string[]>([]);
+  
+  // User-added places
+  const [userPlaces, setUserPlaces] = useState<Place[]>([]);
+  
+  // Add Location Search State
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<GooglePlaceResult[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   
   // Map Filters
   const [mapFilters, setMapFilters] = useState<Record<Category, boolean>>({
@@ -325,6 +343,12 @@ export default function App() {
     if (savedFavs) {
       setFavorites(JSON.parse(savedFavs));
     }
+    
+    // Load user-added places
+    const savedUserPlaces = localStorage.getItem('amble_user_places');
+    if (savedUserPlaces) {
+      setUserPlaces(JSON.parse(savedUserPlaces));
+    }
 
     // Get Location
     if (navigator.geolocation) {
@@ -350,9 +374,14 @@ export default function App() {
     ? (userLocation || HOTEL_COORDINATES) 
     : HOTEL_COORDINATES;
 
+  // Combine curated places with user-added places
+  const allPlaces = useMemo(() => {
+    return [...PLACES, ...userPlaces];
+  }, [userPlaces]);
+
   const sortedPlaces = useMemo(() => {
     if (!selectedCategory) return [];
-    return PLACES
+    return allPlaces
       .filter(p => p.category === selectedCategory)
       .map(p => ({
         ...p,
@@ -366,7 +395,7 @@ export default function App() {
         if (!aFav && bFav) return 1;
         return a.distanceKm - b.distanceKm;
       });
-  }, [selectedCategory, currentAnchor, favorites]);
+  }, [selectedCategory, currentAnchor, favorites, allPlaces]);
 
   // Handlers
   const handleBioSubmit = (e: React.FormEvent) => {
@@ -434,7 +463,7 @@ export default function App() {
       ? `Near ${selectedPlace.name} (${selectedPlace.category})`
       : userLocation ? `Lat: ${userLocation.lat}, Lng: ${userLocation.lng}` : "Central Glasgow";
 
-    const responseText = await getExploreRecommendations(text, userBio, PLACES, contextDesc);
+    const responseText = await getExploreRecommendations(text, userBio, allPlaces, contextDesc);
     
     setIsTyping(false);
     setChatMessages(prev => [...prev, {
@@ -446,6 +475,81 @@ export default function App() {
 
   const toggleMapFilter = (cat: Category) => {
     setMapFilters(prev => ({ ...prev, [cat]: !prev[cat] }));
+  };
+
+  // Add Location Handlers
+  const handleSearch = async () => {
+    if (searchQuery.trim().length < 2) return;
+    
+    setIsSearching(true);
+    setSearchError(null);
+    setSearchResults([]);
+    
+    try {
+      const searchLocation = userLocation || HOTEL_COORDINATES;
+      const results = await searchPlaces({
+        query: searchQuery.trim(),
+        location: searchLocation,
+        radius: 5000,
+      });
+      
+      setSearchResults(results);
+      
+    } catch (err) {
+      console.error('Search error:', err);
+      setSearchError('Something went wrong. Please try again.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSelectResult = (result: GooglePlaceResult) => {
+    // Check if place already exists
+    const existingPlace = allPlaces.find(p => p.googlePlaceId === result.place_id);
+    if (existingPlace) {
+      setSearchError('This place is already in your collection!');
+      return;
+    }
+    
+    // Transform Google Place to our Place type
+    const category = assignCategory(result.types);
+    const newPlace: Place = {
+      id: `user-${result.place_id}`,
+      name: result.name,
+      category: category,
+      description: result.formatted_address,
+      address: result.formatted_address,
+      coordinates: {
+        lat: result.geometry.location.lat,
+        lng: result.geometry.location.lng,
+      },
+      priority: false,
+      isOpen: result.opening_hours?.open_now,
+      images: result.photos && result.photos.length > 0
+        ? [getPhotoUrl(result.photos[0].photo_reference, 800)]
+        : ['https://images.unsplash.com/photo-1486718448742-166226480961?auto=format&fit=crop&w=800&q=80'],
+      source: 'user',
+      googlePlaceId: result.place_id,
+      addedAt: new Date().toISOString(),
+    };
+    
+    // Add to userPlaces and persist
+    const updatedPlaces = [...userPlaces, newPlace];
+    setUserPlaces(updatedPlaces);
+    localStorage.setItem('amble_user_places', JSON.stringify(updatedPlaces));
+    
+    // Clear search state and navigate to the new place detail
+    setSearchQuery('');
+    setSearchResults([]);
+    setSelectedPlace(newPlace);
+    setView('DETAIL');
+  };
+
+  const resetAddLocationView = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchError(null);
+    setView('DASHBOARD');
   };
 
   // Views
@@ -736,6 +840,178 @@ export default function App() {
     </div>
   );
 
+  const renderAddLocation = () => {
+    const searchLocation = userLocation || HOTEL_COORDINATES;
+    
+    return (
+      <div className="flex flex-col h-full bg-slate-50">
+        {/* Header */}
+        <header className="p-4 bg-white shadow-sm flex items-center gap-3 sticky top-0 z-10">
+          <button onClick={resetAddLocationView} className="p-2 hover:bg-slate-100 rounded-full">
+            <ArrowLeft className="w-5 h-5 text-slate-700" />
+          </button>
+          <h2 className="text-lg font-bold text-slate-900">What should we do next?</h2>
+        </header>
+
+        {/* Search Input */}
+        <div className="p-4 bg-white border-b border-slate-100">
+          <form onSubmit={(e) => { e.preventDefault(); handleSearch(); }} className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value.slice(0, 100))}
+              placeholder="Try 'Scottish Design Exchange' or 'coffee near me'"
+              className="w-full bg-slate-100 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              autoFocus
+              maxLength={100}
+            />
+            <button
+              type="submit"
+              disabled={searchQuery.trim().length < 2 || isSearching}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-slate-900 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSearching ? <Loader className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
+            </button>
+          </form>
+          {searchQuery.length > 0 && searchQuery.length < 2 && (
+            <p className="text-xs text-slate-400 mt-2">Enter at least 2 characters to search</p>
+          )}
+        </div>
+
+        {/* Results Area */}
+        <div className="flex-1 overflow-y-auto p-4 pb-24">
+          {/* Error State */}
+          {searchError && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <AlertCircle className="w-16 h-16 text-red-400 mb-4" />
+              <h3 className="font-bold text-slate-900 mb-2">Something went wrong</h3>
+              <p className="text-sm text-slate-500 mb-4">{searchError}</p>
+              <button
+                onClick={() => { setSearchError(null); handleSearch(); }}
+                className="px-4 py-2 bg-slate-900 text-white rounded-lg font-medium"
+              >
+                Retry Search
+              </button>
+            </div>
+          )}
+
+          {/* Loading State */}
+          {isSearching && (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-white rounded-2xl p-3 shadow-sm animate-pulse">
+                  <div className="flex gap-3">
+                    <div className="w-24 h-24 bg-slate-200 rounded-xl" />
+                    <div className="flex-1 space-y-3">
+                      <div className="h-5 bg-slate-200 rounded w-3/4" />
+                      <div className="h-4 bg-slate-200 rounded w-full" />
+                      <div className="h-3 bg-slate-200 rounded w-1/2" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty State - No Results */}
+          {!isSearching && !searchError && searchResults.length === 0 && searchQuery.trim().length >= 2 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Search className="w-16 h-16 text-slate-300 mb-4" />
+              <h3 className="font-bold text-slate-900 mb-2">No results found</h3>
+              <p className="text-sm text-slate-500 mb-4">Try a different search term or check the spelling</p>
+              <button
+                onClick={() => setSearchQuery('')}
+                className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium"
+              >
+                Clear Search
+              </button>
+            </div>
+          )}
+
+          {/* Initial State - No search yet */}
+          {!isSearching && !searchError && searchResults.length === 0 && searchQuery.trim().length < 2 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+                <Plus className="w-10 h-10 text-amber-600" />
+              </div>
+              <h3 className="font-bold text-slate-900 mb-2">Discover new places</h3>
+              <p className="text-sm text-slate-500 max-w-xs">
+                Search for a place you've heard about and add it to your Glasgow collection
+              </p>
+            </div>
+          )}
+
+          {/* Results */}
+          {!isSearching && !searchError && searchResults.length > 0 && (
+            <div className="space-y-3">
+              {searchResults.map((result, index) => {
+                const distanceKm = calculateDistance(searchLocation, result.geometry.location);
+                const walkTime = getWalkingMinutes(distanceKm);
+                const photoUrl = result.photos?.[0]?.photo_reference
+                  ? getPhotoUrl(result.photos[0].photo_reference, 400)
+                  : 'https://images.unsplash.com/photo-1486718448742-166226480961?auto=format&fit=crop&w=400&q=80';
+                const isTopResult = index === 0;
+
+                return (
+                  <button
+                    key={result.place_id}
+                    onClick={() => handleSelectResult(result)}
+                    className={`w-full bg-white rounded-2xl p-3 shadow-sm hover:shadow-md hover:bg-slate-50 transition-all border-l-4 ${
+                      isTopResult ? 'border-amber-400' : 'border-transparent'
+                    } text-left`}
+                  >
+                    <div className="flex gap-3">
+                      {/* Photo */}
+                      <div className="w-24 h-24 flex-shrink-0 rounded-xl overflow-hidden bg-slate-200">
+                        <img 
+                          src={photoUrl} 
+                          alt={result.name} 
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1486718448742-166226480961?auto=format&fit=crop&w=400&q=80';
+                          }}
+                        />
+                      </div>
+                      
+                      {/* Content */}
+                      <div className="flex-1 flex flex-col items-start min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h3 className="font-bold text-slate-900 text-base truncate">{result.name}</h3>
+                          {isTopResult && (
+                            <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold flex items-center gap-1 whitespace-nowrap">
+                              <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                              Best Match
+                            </span>
+                          )}
+                        </div>
+                        
+                        <p className="text-sm text-slate-500 line-clamp-1 mb-2 w-full">
+                          {result.formatted_address}
+                        </p>
+                        
+                        <div className="flex items-center gap-1 text-xs text-slate-400">
+                          <MapPin className="w-3 h-3" />
+                          <span>{walkTime} min walk ({distanceKm.toFixed(1)} km)</span>
+                        </div>
+                        
+                        {result.rating && (
+                          <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
+                            <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                            <span>{result.rating} ({result.user_ratings_total || 0} reviews)</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderMap = () => (
     <div className="flex flex-col h-full bg-slate-50 relative">
       <div className="absolute top-4 left-4 right-4 z-10 flex gap-2 overflow-x-auto scrollbar-hide py-1">
@@ -755,7 +1031,7 @@ export default function App() {
       </div>
       
       <MapView 
-        places={PLACES} 
+        places={allPlaces} 
         userLocation={userLocation} 
         hotelLocation={HOTEL_COORDINATES} 
         filters={mapFilters}
@@ -809,6 +1085,7 @@ export default function App() {
       {view === 'DETAIL' && renderDetail()}
       {view === 'EXPLORE' && renderExplore()}
       {view === 'MAP' && renderMap()}
+      {view === 'ADD_LOCATION' && renderAddLocation()}
 
       {/* Bottom Nav - Sticky */}
       <nav className="absolute bottom-6 left-6 right-6 bg-slate-900 text-slate-300 rounded-2xl shadow-2xl flex justify-around items-center p-4 backdrop-blur-md z-50">
@@ -840,6 +1117,19 @@ export default function App() {
          >
            <Compass className="w-6 h-6" />
            <span className="text-[10px] font-bold uppercase">Explore</span>
+         </button>
+         
+         <button 
+           onClick={() => {
+             setSearchQuery('');
+             setSearchResults([]);
+             setSearchError(null);
+             setView('ADD_LOCATION');
+           }}
+           className={`flex flex-col items-center gap-1 w-12 ${view === 'ADD_LOCATION' ? 'text-amber-400' : 'hover:text-white'}`}
+         >
+           <Plus className="w-6 h-6" />
+           <span className="text-[10px] font-bold uppercase">Add</span>
          </button>
       </nav>
     </div>
