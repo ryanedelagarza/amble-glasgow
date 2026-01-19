@@ -24,6 +24,57 @@ interface SearchPlacesParams {
   radius?: number; // Default 5000 meters (5km)
 }
 
+// --- Result Cache with 5-minute TTL ---
+interface CacheEntry {
+  results: GooglePlaceResult[];
+  timestamp: number;
+}
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const searchCache = new Map<string, CacheEntry>();
+
+// Generate cache key from search params
+function getCacheKey(params: SearchPlacesParams): string {
+  const { query, location, radius = 5000 } = params;
+  // Round location to 4 decimal places to allow for slight variations
+  const lat = location.lat.toFixed(4);
+  const lng = location.lng.toFixed(4);
+  return `${query.toLowerCase().trim()}|${lat},${lng}|${radius}`;
+}
+
+// Check if cache entry is still valid
+function isCacheValid(entry: CacheEntry): boolean {
+  return Date.now() - entry.timestamp < CACHE_TTL_MS;
+}
+
+// Get cached results if available and valid
+function getCachedResults(params: SearchPlacesParams): GooglePlaceResult[] | null {
+  const key = getCacheKey(params);
+  const entry = searchCache.get(key);
+  
+  if (entry && isCacheValid(entry)) {
+    console.log('[Cache] Hit for query:', params.query);
+    return entry.results;
+  }
+  
+  // Remove expired entry if exists
+  if (entry) {
+    searchCache.delete(key);
+  }
+  
+  return null;
+}
+
+// Store results in cache
+function cacheResults(params: SearchPlacesParams, results: GooglePlaceResult[]): void {
+  const key = getCacheKey(params);
+  searchCache.set(key, {
+    results,
+    timestamp: Date.now(),
+  });
+  console.log('[Cache] Stored results for query:', params.query);
+}
+
 // Helper function to delay execution
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -60,6 +111,12 @@ async function fetchPlaces(url: URL): Promise<GooglePlaceResult[]> {
 export async function searchPlaces(params: SearchPlacesParams): Promise<GooglePlaceResult[]> {
   const { query, location, radius = 5000 } = params;
   
+  // Check cache first
+  const cachedResults = getCachedResults(params);
+  if (cachedResults !== null) {
+    return cachedResults;
+  }
+  
   // Check for offline status
   if (!navigator.onLine) {
     throw new OfflineError();
@@ -80,7 +137,10 @@ export async function searchPlaces(params: SearchPlacesParams): Promise<GooglePl
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await fetchPlaces(url);
+      const results = await fetchPlaces(url);
+      // Cache successful results
+      cacheResults(params, results);
+      return results;
       
     } catch (error) {
       lastError = error as Error;

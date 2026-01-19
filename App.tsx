@@ -20,7 +20,8 @@ import {
   Search,
   Loader,
   AlertCircle,
-  WifiOff
+  WifiOff,
+  Trash2
 } from 'lucide-react';
 import { 
   Place, 
@@ -35,6 +36,7 @@ import { PLACES, DEFAULT_BIO, HOTEL_COORDINATES } from './constants';
 import { calculateDistance, formatDistance, getWalkingMinutes } from './utils';
 import { getVibeCheck, getExploreRecommendations, rankSearchResults } from './services/geminiService';
 import { searchPlaces, getPhotoUrl, assignCategory, PlacesApiError, OfflineError } from './services/googlePlacesService';
+import analytics from './services/analytics';
 
 // --- Types for Leaflet (since we load it via CDN) ---
 declare global {
@@ -154,6 +156,46 @@ const Toast: React.FC<{
         <button onClick={onClose} className="p-1 hover:bg-white/10 rounded">
           <X className="w-4 h-4" />
         </button>
+      </div>
+    </div>
+  </div>
+);
+
+const DeleteConfirmModal: React.FC<{
+  placeName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ placeName, onConfirm, onCancel }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+    {/* Backdrop */}
+    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+    
+    {/* Modal */}
+    <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="flex flex-col items-center text-center">
+        <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mb-4">
+          <Trash2 className="w-7 h-7 text-red-600" />
+        </div>
+        
+        <h3 className="text-xl font-bold text-slate-900 mb-2">Remove Place?</h3>
+        <p className="text-sm text-slate-500 mb-6">
+          Are you sure you want to remove <span className="font-semibold text-slate-700">{placeName}</span> from your collection?
+        </p>
+        
+        <div className="flex gap-3 w-full">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-3 px-4 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors"
+          >
+            Remove
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -354,6 +396,9 @@ export default function App() {
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; action?: () => void; actionLabel?: string } | null>(null);
   
+  // Delete confirmation modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  
   // Map Filters
   const [mapFilters, setMapFilters] = useState<Record<Category, boolean>>({
     Food: true,
@@ -529,6 +574,12 @@ export default function App() {
   const handleSearch = async () => {
     if (searchQuery.trim().length < 2) return;
     
+    const searchStartTime = performance.now();
+    const query = searchQuery.trim();
+    
+    // Track search initiated
+    analytics.searchInitiated(query);
+    
     setIsSearching(true);
     setSearchError(null);
     setSearchResults([]);
@@ -536,19 +587,22 @@ export default function App() {
     try {
       const searchLocation = userLocation || HOTEL_COORDINATES;
       const results = await searchPlaces({
-        query: searchQuery.trim(),
+        query: query,
         location: searchLocation,
         radius: 5000,
       });
       
       if (results.length === 0) {
         setSearchResults([]);
+        // Track search completed with 0 results
+        const timeToResults = Math.round(performance.now() - searchStartTime);
+        analytics.searchCompleted(0, timeToResults);
         return;
       }
       
       // Use AI to rank results by relevance
       const rankedIds = await rankSearchResults(
-        searchQuery.trim(),
+        query,
         userBio,
         searchLocation,
         results
@@ -561,17 +615,29 @@ export default function App() {
       
       setSearchResults(rankedResults);
       
+      // Track search completed with results
+      const timeToResults = Math.round(performance.now() - searchStartTime);
+      analytics.searchCompleted(rankedResults.length, timeToResults);
+      
     } catch (err) {
       console.error('Search error:', err);
       
       // Handle specific error types with user-friendly messages
+      let errorType = 'UNKNOWN';
+      let errorMessage = 'Something went wrong. Please try again.';
+      
       if (err instanceof OfflineError) {
-        setSearchError('No internet connection. Check your network and try again.');
+        errorType = 'OFFLINE';
+        errorMessage = 'No internet connection. Check your network and try again.';
       } else if (err instanceof PlacesApiError) {
-        setSearchError(err.message);
-      } else {
-        setSearchError('Something went wrong. Please try again.');
+        errorType = err.code;
+        errorMessage = err.message;
       }
+      
+      setSearchError(errorMessage);
+      
+      // Track search error
+      analytics.searchError(errorType, errorMessage);
     } finally {
       setIsSearching(false);
     }
@@ -604,7 +670,10 @@ export default function App() {
     };
   }, []);
 
-  const handleSelectResult = (result: GooglePlaceResult) => {
+  const handleSelectResult = (result: GooglePlaceResult, position: number) => {
+    // Track result selection
+    analytics.resultSelected(position + 1, result.place_id, result.name);
+    
     // Check if place already exists
     const existingPlace = allPlaces.find(p => p.googlePlaceId === result.place_id);
     if (existingPlace) {
@@ -639,6 +708,9 @@ export default function App() {
     setUserPlaces(updatedPlaces);
     localStorage.setItem('amble_user_places', JSON.stringify(updatedPlaces));
     
+    // Track place added
+    analytics.placeAdded(newPlace.id, category);
+    
     // Clear search state and navigate to the new place detail
     setSearchQuery('');
     setSearchResults([]);
@@ -661,6 +733,36 @@ export default function App() {
     setSearchResults([]);
     setSearchError(null);
     setView('DASHBOARD');
+  };
+
+  // Delete user-added place handler
+  const handleDeletePlace = () => {
+    if (!selectedPlace || selectedPlace.source !== 'user') return;
+    
+    // Track place removal
+    analytics.placeRemoved(selectedPlace.id, selectedPlace.category);
+    
+    // Remove from userPlaces
+    const updatedPlaces = userPlaces.filter(p => p.id !== selectedPlace.id);
+    setUserPlaces(updatedPlaces);
+    localStorage.setItem('amble_user_places', JSON.stringify(updatedPlaces));
+    
+    // Also remove from favorites if it was favorited
+    if (favorites.includes(selectedPlace.id)) {
+      const updatedFavs = favorites.filter(f => f !== selectedPlace.id);
+      setFavorites(updatedFavs);
+      localStorage.setItem('amble_favorites', JSON.stringify(updatedFavs));
+    }
+    
+    // Close modal and navigate back
+    setShowDeleteModal(false);
+    setSelectedPlace(null);
+    setView('LIST');
+    
+    // Show confirmation toast
+    setToast({
+      message: 'Place removed from your collection',
+    });
   };
 
   // Views
@@ -835,6 +937,15 @@ export default function App() {
                  <Heart className={`w-3 h-3 ${isFav ? 'fill-pink-700' : ''}`} />
                  {isFav ? 'Favorited' : 'Favorite'}
                </button>
+               {selectedPlace.source === 'user' && (
+                 <button 
+                   onClick={() => setShowDeleteModal(true)}
+                   className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border bg-white text-red-500 border-red-200 hover:bg-red-50"
+                 >
+                   <Trash2 className="w-3 h-3" />
+                   Remove
+                 </button>
+               )}
              </div>
           </div>
 
@@ -1076,7 +1187,7 @@ export default function App() {
                 return (
                   <button
                     key={result.place_id}
-                    onClick={() => handleSelectResult(result)}
+                    onClick={() => handleSelectResult(result, index)}
                     className={`w-full bg-white rounded-2xl p-3 shadow-sm hover:shadow-md hover:bg-slate-50 transition-all border-l-4 ${
                       isTopResult ? 'border-amber-400' : 'border-transparent'
                     } text-left`}
@@ -1218,6 +1329,15 @@ export default function App() {
         />
       )}
 
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && selectedPlace && (
+        <DeleteConfirmModal
+          placeName={selectedPlace.name}
+          onConfirm={handleDeletePlace}
+          onCancel={() => setShowDeleteModal(false)}
+        />
+      )}
+
       {/* Bottom Nav - Sticky */}
       <nav className="absolute bottom-6 left-6 right-6 bg-slate-900 text-slate-300 rounded-2xl shadow-2xl flex justify-around items-center p-4 backdrop-blur-md z-50">
          <button 
@@ -1252,6 +1372,7 @@ export default function App() {
          
          <button 
            onClick={() => {
+             analytics.addLocationButtonTapped();
              setSearchQuery('');
              setSearchResults([]);
              setSearchError(null);
