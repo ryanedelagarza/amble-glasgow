@@ -3,14 +3,67 @@ import { Coordinates, GooglePlaceResult, Category } from '../types';
 const GOOGLE_PLACES_API_KEY = import.meta.env.VITE_GOOGLE_PLACES_API_KEY;
 const PLACES_API_URL = 'https://maps.googleapis.com/maps/api/place';
 
+// Custom error types for specific handling
+export class PlacesApiError extends Error {
+  constructor(public code: string, message: string) {
+    super(message);
+    this.name = 'PlacesApiError';
+  }
+}
+
+export class OfflineError extends Error {
+  constructor() {
+    super('No internet connection');
+    this.name = 'OfflineError';
+  }
+}
+
 interface SearchPlacesParams {
   query: string;
   location: Coordinates;
   radius?: number; // Default 5000 meters (5km)
 }
 
+// Helper function to delay execution
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Internal fetch function (single attempt)
+async function fetchPlaces(url: URL): Promise<GooglePlaceResult[]> {
+  const response = await fetch(url.toString());
+  
+  if (!response.ok) {
+    throw new PlacesApiError('HTTP_ERROR', `Network error: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  
+  // Handle specific API status codes
+  switch (data.status) {
+    case 'OK':
+    case 'ZERO_RESULTS':
+      return data.results?.slice(0, 5) || [];
+    
+    case 'OVER_QUERY_LIMIT':
+      throw new PlacesApiError('OVER_QUERY_LIMIT', 'Too many searches. Please try again in a few minutes.');
+    
+    case 'REQUEST_DENIED':
+      throw new PlacesApiError('REQUEST_DENIED', 'Search service unavailable. Please try again later.');
+    
+    case 'INVALID_REQUEST':
+      throw new PlacesApiError('INVALID_REQUEST', 'Invalid search. Please try a different query.');
+    
+    default:
+      throw new PlacesApiError(data.status, `Search failed: ${data.status}`);
+  }
+}
+
 export async function searchPlaces(params: SearchPlacesParams): Promise<GooglePlaceResult[]> {
   const { query, location, radius = 5000 } = params;
+  
+  // Check for offline status
+  if (!navigator.onLine) {
+    throw new OfflineError();
+  }
   
   const url = new URL(`${PLACES_API_URL}/textsearch/json`);
   url.searchParams.append('query', query);
@@ -19,26 +72,58 @@ export async function searchPlaces(params: SearchPlacesParams): Promise<GooglePl
   url.searchParams.append('key', GOOGLE_PLACES_API_KEY);
   url.searchParams.append('region', 'uk'); // Bias to UK results
   
-  try {
-    const response = await fetch(url.toString());
-    
-    if (!response.ok) {
-      throw new Error(`Places API error: ${response.status}`);
+  // Retry configuration
+  const maxRetries = 2;
+  const baseDelay = 1000; // 1 second
+  
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetchPlaces(url);
+      
+    } catch (error) {
+      lastError = error as Error;
+      
+      // Don't retry for certain error types
+      if (error instanceof OfflineError) {
+        throw error;
+      }
+      
+      if (error instanceof PlacesApiError) {
+        // Don't retry for quota or invalid request errors
+        if (['OVER_QUERY_LIMIT', 'INVALID_REQUEST', 'REQUEST_DENIED'].includes(error.code)) {
+          throw error;
+        }
+      }
+      
+      // Check if we should retry
+      if (attempt < maxRetries) {
+        // Exponential backoff: 1s, 2s
+        const retryDelay = baseDelay * Math.pow(2, attempt);
+        console.log(`Search attempt ${attempt + 1} failed, retrying in ${retryDelay}ms...`);
+        await delay(retryDelay);
+        
+        // Re-check online status before retry
+        if (!navigator.onLine) {
+          throw new OfflineError();
+        }
+      }
     }
-    
-    const data = await response.json();
-    
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      throw new Error(`Places API status: ${data.status}`);
-    }
-    
-    // Return top 5 results only
-    return data.results?.slice(0, 5) || [];
-    
-  } catch (error) {
-    console.error('Google Places search error:', error);
-    throw error;
   }
+  
+  // All retries exhausted
+  if (lastError instanceof PlacesApiError || lastError instanceof OfflineError) {
+    throw lastError;
+  }
+  
+  // Handle network/fetch errors
+  if (lastError instanceof TypeError && lastError.message.includes('fetch')) {
+    throw new OfflineError();
+  }
+  
+  console.error('Google Places search error after retries:', lastError);
+  throw new PlacesApiError('UNKNOWN', 'Something went wrong. Please try again.');
 }
 
 export function getPhotoUrl(photoReference: string, maxWidth: number = 400): string {

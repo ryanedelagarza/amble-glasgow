@@ -19,7 +19,8 @@ import {
   Plus,
   Search,
   Loader,
-  AlertCircle
+  AlertCircle,
+  WifiOff
 } from 'lucide-react';
 import { 
   Place, 
@@ -32,8 +33,8 @@ import {
 } from './types';
 import { PLACES, DEFAULT_BIO, HOTEL_COORDINATES } from './constants';
 import { calculateDistance, formatDistance, getWalkingMinutes } from './utils';
-import { getVibeCheck, getExploreRecommendations } from './services/geminiService';
-import { searchPlaces, getPhotoUrl, assignCategory } from './services/googlePlacesService';
+import { getVibeCheck, getExploreRecommendations, rankSearchResults } from './services/geminiService';
+import { searchPlaces, getPhotoUrl, assignCategory, PlacesApiError, OfflineError } from './services/googlePlacesService';
 
 // --- Types for Leaflet (since we load it via CDN) ---
 declare global {
@@ -124,6 +125,39 @@ const ChatBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
     </div>
   );
 };
+
+const Toast: React.FC<{
+  message: string;
+  action?: () => void;
+  actionLabel?: string;
+  onClose: () => void;
+}> = ({ message, action, actionLabel, onClose }) => (
+  <div className="fixed bottom-32 left-4 right-4 z-50 animate-in slide-in-from-bottom duration-300">
+    <div className="bg-slate-900 text-white rounded-xl p-4 shadow-2xl flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center flex-shrink-0">
+          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <span className="text-sm font-medium">{message}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {action && actionLabel && (
+          <button
+            onClick={action}
+            className="text-amber-400 text-sm font-bold hover:text-amber-300 whitespace-nowrap"
+          >
+            {actionLabel}
+          </button>
+        )}
+        <button onClick={onClose} className="p-1 hover:bg-white/10 rounded">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 const ImageGallery: React.FC<{ images: string[], name: string }> = ({ images, name }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -317,6 +351,9 @@ export default function App() {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   
+  // Toast notification state
+  const [toast, setToast] = useState<{ message: string; action?: () => void; actionLabel?: string } | null>(null);
+  
   // Map Filters
   const [mapFilters, setMapFilters] = useState<Record<Category, boolean>>({
     Food: true,
@@ -330,6 +367,7 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize
   useEffect(() => {
@@ -368,6 +406,16 @@ export default function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isTyping]);
+
+  // Auto-dismiss toast after 4 seconds
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // Derived Data
   const currentAnchor = distanceMode === DistanceMode.FROM_ME 
@@ -493,15 +541,68 @@ export default function App() {
         radius: 5000,
       });
       
-      setSearchResults(results);
+      if (results.length === 0) {
+        setSearchResults([]);
+        return;
+      }
+      
+      // Use AI to rank results by relevance
+      const rankedIds = await rankSearchResults(
+        searchQuery.trim(),
+        userBio,
+        searchLocation,
+        results
+      );
+      
+      // Reorder results based on AI ranking
+      const rankedResults = rankedIds
+        .map(id => results.find(r => r.place_id === id))
+        .filter((r): r is GooglePlaceResult => r !== undefined);
+      
+      setSearchResults(rankedResults);
       
     } catch (err) {
       console.error('Search error:', err);
-      setSearchError('Something went wrong. Please try again.');
+      
+      // Handle specific error types with user-friendly messages
+      if (err instanceof OfflineError) {
+        setSearchError('No internet connection. Check your network and try again.');
+      } else if (err instanceof PlacesApiError) {
+        setSearchError(err.message);
+      } else {
+        setSearchError('Something went wrong. Please try again.');
+      }
     } finally {
       setIsSearching(false);
     }
   };
+
+  // Debounced search - triggers 300ms after user stops typing
+  const handleSearchInputChange = (value: string) => {
+    setSearchQuery(value.slice(0, 100));
+    setSearchError(null);
+    
+    // Clear previous timeout
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    
+    // Only auto-search if query is long enough
+    if (value.trim().length >= 2) {
+      searchDebounceRef.current = setTimeout(() => {
+        handleSearch();
+      }, 300);
+    }
+  };
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
 
   const handleSelectResult = (result: GooglePlaceResult) => {
     // Check if place already exists
@@ -543,6 +644,16 @@ export default function App() {
     setSearchResults([]);
     setSelectedPlace(newPlace);
     setView('DETAIL');
+    
+    // Show success toast with option to add another
+    setToast({
+      message: `Added to ${category}!`,
+      action: () => {
+        setView('ADD_LOCATION');
+        setToast(null);
+      },
+      actionLabel: 'Add Another'
+    });
   };
 
   const resetAddLocationView = () => {
@@ -859,7 +970,7 @@ export default function App() {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value.slice(0, 100))}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
               placeholder="Try 'Scottish Design Exchange' or 'coffee near me'"
               className="w-full bg-slate-100 rounded-xl px-4 py-3 pr-12 focus:outline-none focus:ring-2 focus:ring-amber-500"
               autoFocus
@@ -883,9 +994,19 @@ export default function App() {
           {/* Error State */}
           {searchError && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <AlertCircle className="w-16 h-16 text-red-400 mb-4" />
-              <h3 className="font-bold text-slate-900 mb-2">Something went wrong</h3>
-              <p className="text-sm text-slate-500 mb-4">{searchError}</p>
+              {searchError.includes('internet') || searchError.includes('connection') ? (
+                <WifiOff className="w-16 h-16 text-slate-400 mb-4" />
+              ) : searchError.includes('Too many') ? (
+                <AlertCircle className="w-16 h-16 text-amber-400 mb-4" />
+              ) : (
+                <AlertCircle className="w-16 h-16 text-red-400 mb-4" />
+              )}
+              <h3 className="font-bold text-slate-900 mb-2">
+                {searchError.includes('internet') ? 'No Connection' : 
+                 searchError.includes('Too many') ? 'Slow Down' : 
+                 'Something went wrong'}
+              </h3>
+              <p className="text-sm text-slate-500 mb-4 max-w-xs">{searchError}</p>
               <button
                 onClick={() => { setSearchError(null); handleSearch(); }}
                 className="px-4 py-2 bg-slate-900 text-white rounded-lg font-medium"
@@ -1086,6 +1207,16 @@ export default function App() {
       {view === 'EXPLORE' && renderExplore()}
       {view === 'MAP' && renderMap()}
       {view === 'ADD_LOCATION' && renderAddLocation()}
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          action={toast.action}
+          actionLabel={toast.actionLabel}
+          onClose={() => setToast(null)}
+        />
+      )}
 
       {/* Bottom Nav - Sticky */}
       <nav className="absolute bottom-6 left-6 right-6 bg-slate-900 text-slate-300 rounded-2xl shadow-2xl flex justify-around items-center p-4 backdrop-blur-md z-50">
