@@ -1135,7 +1135,8 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 pb-24">
-          <div className="flex items-center justify-between mb-6">
+          {/* SECTION 1: Distance & Favorite badges */}
+          <div className="flex items-center justify-between mb-4">
              <div className="bg-slate-100 px-3 py-1 rounded-full text-xs font-bold text-slate-600">
                {formatDistance(distanceKm)} away
              </div>
@@ -1160,7 +1161,69 @@ export default function App() {
              </div>
           </div>
 
-          <div className="mb-8">
+          {/* SECTION 2: PRIMARY ACTIONS - Save & Go Now (CO2: moved above fold) */}
+          {(() => {
+            // Check if this place is already saved
+            const isAlreadySaved = selectedPlace.source === 'user' || userPlaces.some(
+              p => p.googlePlaceId === selectedPlace?.googlePlaceId
+            );
+            const savedPlace = userPlaces.find(p => p.googlePlaceId === selectedPlace?.googlePlaceId);
+            const savedCategory = savedPlace?.category || selectedPlace.category;
+
+            return (
+              <div className="space-y-3 mb-6 pb-6 border-b border-slate-100">
+                {!isAlreadySaved && selectedGoogleResult ? (
+                  // NOT SAVED: Show save button
+                  <button
+                    onClick={() => {
+                      const suggestedCat = assignCategory(selectedGoogleResult.types);
+                      setSuggestedCategory(suggestedCat);
+                      setShowCategoryModal(true);
+                      analytics.saveButtonTapped(selectedPlace.name, suggestedCat);
+                    }}
+                    className="w-full bg-white border-2 border-slate-300 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-50 hover:border-slate-400 active:scale-[0.98] transition-all"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Save to Collection
+                  </button>
+                ) : (
+                  // ALREADY SAVED: Show status and remove option
+                  <>
+                    <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold py-4 rounded-xl flex items-center justify-center gap-2">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      <span>Saved in <span className="font-bold">{savedCategory}</span></span>
+                    </div>
+                    
+                    {selectedPlace.source === 'user' && (
+                      <button
+                        onClick={() => setShowDeleteModal(true)}
+                        className="w-full bg-white border border-slate-200 text-slate-600 font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200 active:scale-[0.98] transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Remove from Collection
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {/* Go Now Button */}
+                <a 
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.coordinates.lat},${selectedPlace.coordinates.lng}&travelmode=walking`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-[0.98] transition-all"
+                >
+                  <Navigation className="w-5 h-5" />
+                  Go Now
+                </a>
+              </div>
+            );
+          })()}
+
+          {/* SECTION 3: VIBE CHECK (CO2: moved below fold) */}
+          <div className="mb-6">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest mb-3 flex items-center gap-2">
               <Info className="w-4 h-4 text-amber-500" />
               Vibe Check
@@ -1179,74 +1242,14 @@ export default function App() {
             </div>
           </div>
 
-          {/* CO1 Issue 1: Save to Collection section */}
-          {(() => {
-            // Check if this place is already saved
-            const isAlreadySaved = selectedPlace.source === 'user' || userPlaces.some(
-              p => p.googlePlaceId === selectedPlace?.googlePlaceId
-            );
-            const savedPlace = userPlaces.find(p => p.googlePlaceId === selectedPlace?.googlePlaceId);
-            const savedCategory = savedPlace?.category || selectedPlace.category;
-
-            return (
-              <div className="mb-6 pb-6 border-b border-slate-100">
-                {!isAlreadySaved && selectedGoogleResult ? (
-                  // NOT SAVED: Show save button
-                  <button
-                    onClick={() => {
-                      const suggestedCat = assignCategory(selectedGoogleResult.types);
-                      setSuggestedCategory(suggestedCat);
-                      setShowCategoryModal(true);
-                      analytics.saveButtonTapped(selectedPlace.name, suggestedCat);
-                    }}
-                    className="w-full bg-white border-2 border-slate-300 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-50 hover:border-slate-400 active:scale-[0.98] transition-all"
-                  >
-                    <Plus className="w-5 h-5" />
-                    Save to Collection
-                  </button>
-                ) : (
-                  // ALREADY SAVED: Show status and remove option
-                  <>
-                    <div className="w-full bg-slate-100 text-slate-700 font-semibold py-4 rounded-xl flex items-center justify-center gap-2 mb-3">
-                      <svg className="w-5 h-5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      <span>Saved in <span className="font-bold">{savedCategory}</span></span>
-                    </div>
-                    
-                    {selectedPlace.source === 'user' && (
-                      <button
-                        onClick={() => setShowDeleteModal(true)}
-                        className="w-full bg-white border border-slate-200 text-slate-600 font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200 active:scale-[0.98] transition-all"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Remove from Collection
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-          })()}
-
-          <div className="space-y-3">
-             <a 
-               href={`https://www.google.com/maps/dir/?api=1&destination=${selectedPlace.coordinates.lat},${selectedPlace.coordinates.lng}&travelmode=walking`}
-               target="_blank"
-               rel="noreferrer"
-               className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-95 transition-all"
-             >
-               <Navigation className="w-5 h-5" />
-               Go Now
-             </a>
-             <button 
-               onClick={handleExploreContext}
-               className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-50 active:scale-95 transition-all"
-             >
-               <Compass className="w-5 h-5" />
-               What else is near here?
-             </button>
-          </div>
+          {/* SECTION 4: EXPLORE CONTEXT */}
+          <button 
+            onClick={handleExploreContext}
+            className="w-full bg-white border-2 border-slate-200 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-50 active:scale-[0.98] transition-all"
+          >
+            <Compass className="w-5 h-5" />
+            What else is near here?
+          </button>
         </div>
       </div>
     );
@@ -1610,15 +1613,16 @@ export default function App() {
         />
       )}
 
-      {/* Category Confirmation Modal (Bug #1 fix) */}
-      {showCategoryModal && selectedResult && (
+      {/* Category Confirmation Modal (CO1/CO2 fix) */}
+      {showCategoryModal && (selectedGoogleResult || selectedResult) && (
         <CategoryConfirmModal
-          placeName={selectedResult.name}
+          placeName={(selectedGoogleResult || selectedResult)!.name}
           suggestedCategory={suggestedCategory}
           onConfirm={handleConfirmAdd}
           onCancel={() => {
             setShowCategoryModal(false);
             setSelectedResult(null);
+            setSelectedGoogleResult(null);
           }}
         />
       )}
