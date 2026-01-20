@@ -45,6 +45,39 @@ declare global {
   }
 }
 
+// --- Category Styles for Tags (CO3) ---
+const categoryStyles: Record<Category, {
+  bg: string;
+  border: string;
+  text: string;
+  icon: string;
+}> = {
+  Food: {
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+    text: 'text-amber-900',
+    icon: '🍽️'
+  },
+  Coffee: {
+    bg: 'bg-orange-50',
+    border: 'border-orange-200',
+    text: 'text-orange-900',
+    icon: '☕'
+  },
+  Shopping: {
+    bg: 'bg-pink-50',
+    border: 'border-pink-200',
+    text: 'text-pink-900',
+    icon: '🛍️'
+  },
+  Sites: {
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    text: 'text-emerald-900',
+    icon: '📸'
+  }
+};
+
 // --- Sub-Components ---
 
 const CategoryCard: React.FC<{ 
@@ -310,6 +343,154 @@ const DuplicateModal: React.FC<{
   </div>
 );
 
+// CO3: Collection Management Modal - Change category or remove place
+const CollectionManageModal: React.FC<{
+  place: Place;
+  currentCategory: Category;
+  onChangeCategory: (newCategory: Category) => void;
+  onRemove: () => void;
+  onCancel: () => void;
+}> = ({ place, currentCategory, onChangeCategory, onRemove, onCancel }) => {
+  const [selectedCategory, setSelectedCategory] = useState<Category>(currentCategory);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  
+  const categoryOptions: Array<{ value: Category; icon: string; label: string }> = [
+    { value: 'Food', icon: '🍽️', label: 'Food' },
+    { value: 'Coffee', icon: '☕', label: 'Coffee' },
+    { value: 'Shopping', icon: '🛍️', label: 'Shopping' },
+    { value: 'Sites', icon: '📸', label: 'Sites' },
+  ];
+  
+  const handleUpdate = () => {
+    if (selectedCategory !== currentCategory) {
+      onChangeCategory(selectedCategory);
+    } else {
+      onCancel();
+    }
+  };
+  
+  // Remove confirmation view
+  if (showRemoveConfirm) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowRemoveConfirm(false)} />
+        
+        <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mb-4">
+              <Trash2 className="w-7 h-7 text-red-600" />
+            </div>
+            
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Remove Place?</h3>
+            <p className="text-sm text-slate-500 mb-6">
+              Are you sure you want to remove <span className="font-semibold text-slate-700">{place.name}</span> from your collection?
+            </p>
+            
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setShowRemoveConfirm(false)}
+                className="flex-1 py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onRemove}
+                className="flex-1 py-3 px-4 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // Main manage modal
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
+      
+      <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+        <div className="flex flex-col">
+          {/* Header */}
+          <h3 className="text-xl font-bold text-slate-900 mb-1">Manage Collection</h3>
+          <p className="text-sm text-slate-600 mb-4">{place.name}</p>
+          
+          <div className="h-px bg-slate-200 mb-4" />
+          
+          {/* Category Selection */}
+          <p className="text-sm font-semibold text-slate-700 mb-3">Change category:</p>
+          
+          <div className="space-y-2 mb-6">
+            {categoryOptions.map((option) => {
+              const isSelected = selectedCategory === option.value;
+              const styles = categoryStyles[option.value];
+              
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => setSelectedCategory(option.value)}
+                  className={`
+                    w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left
+                    ${isSelected 
+                      ? `${styles.bg} ${styles.border} ${styles.text}` 
+                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }
+                  `}
+                >
+                  {/* Radio Circle */}
+                  <div className={`
+                    w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0
+                    ${isSelected ? `${styles.border} ${styles.bg}` : 'border-slate-300'}
+                  `}>
+                    {isSelected && (
+                      <div className={`w-2.5 h-2.5 rounded-full ${styles.text.replace('text-', 'bg-')}`} />
+                    )}
+                  </div>
+                  
+                  {/* Icon & Label */}
+                  <span className="text-lg">{option.icon}</span>
+                  <span className="font-semibold">{option.label}</span>
+                  {option.value === currentCategory && (
+                    <span className="ml-auto text-xs text-slate-500">(Current)</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          
+          {/* Remove Button */}
+          <button
+            onClick={() => setShowRemoveConfirm(true)}
+            className="w-full bg-white border-2 border-red-200 text-red-600 font-semibold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 hover:border-red-300 active:scale-[0.98] transition-all mb-4"
+          >
+            <Trash2 className="w-4 h-4" />
+            Remove from Collection
+          </button>
+          
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            <button
+              onClick={onCancel}
+              className="flex-1 py-3 px-4 bg-white border-2 border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 hover:border-slate-300 active:scale-95 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleUpdate}
+              disabled={selectedCategory === currentCategory}
+              className="flex-1 py-3 px-4 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all"
+            >
+              {selectedCategory === currentCategory ? 'No Change' : 'Update'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ImageGallery: React.FC<{ images: string[], name: string }> = ({ images, name }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -518,6 +699,9 @@ export default function App() {
   
   // Duplicate detection modal state (Bug #2 fix)
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  
+  // Collection management modal state (CO3)
+  const [showManageModal, setShowManageModal] = useState(false);
   
   // Navigation context state (Bug #3 fix)
   const [navContext, setNavContext] = useState<{
@@ -985,6 +1169,69 @@ export default function App() {
     });
   };
 
+  // CO3: Handle category change from management modal
+  const handleCategoryChange = (newCategory: Category) => {
+    if (!selectedPlace || selectedPlace.source !== 'user') return;
+    
+    const oldCategory = selectedPlace.category;
+    
+    // Update the place with new category
+    const updatedPlace = { ...selectedPlace, category: newCategory };
+    
+    // Update in userPlaces
+    const updatedPlaces = userPlaces.map(p => 
+      p.id === selectedPlace.id ? updatedPlace : p
+    );
+    
+    setUserPlaces(updatedPlaces);
+    localStorage.setItem('amble_user_places', JSON.stringify(updatedPlaces));
+    
+    // Update selected place
+    setSelectedPlace(updatedPlace);
+    
+    // Close modal
+    setShowManageModal(false);
+    
+    // Show toast
+    setToast({
+      message: `Moved to ${newCategory}!`,
+    });
+    
+    // Analytics
+    analytics.categoryChanged(selectedPlace.name, oldCategory, newCategory);
+  };
+
+  // CO3: Handle remove from management modal
+  const handleRemoveFromModal = () => {
+    if (!selectedPlace || selectedPlace.source !== 'user') return;
+    
+    // Track removal
+    analytics.placeRemoved(selectedPlace.id, selectedPlace.category);
+    
+    // Remove from userPlaces
+    const updatedPlaces = userPlaces.filter(p => p.id !== selectedPlace.id);
+    setUserPlaces(updatedPlaces);
+    localStorage.setItem('amble_user_places', JSON.stringify(updatedPlaces));
+    
+    // Remove from favorites if present
+    if (favorites.includes(selectedPlace.id)) {
+      const updatedFavorites = favorites.filter(id => id !== selectedPlace.id);
+      setFavorites(updatedFavorites);
+      localStorage.setItem('amble_favorites', JSON.stringify(updatedFavorites));
+    }
+    
+    // Close modal
+    setShowManageModal(false);
+    
+    // Navigate back
+    navigateBack();
+    
+    // Toast
+    setToast({
+      message: 'Removed from collection',
+    });
+  };
+
   // Views
 
   const renderOnboarding = () => (
@@ -1135,45 +1382,70 @@ export default function App() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 pb-24">
-          {/* SECTION 1: Distance & Favorite badges */}
-          <div className="flex items-center justify-between mb-4">
-             <div className="bg-slate-100 px-3 py-1 rounded-full text-xs font-bold text-slate-600">
-               {formatDistance(distanceKm)} away
-             </div>
-             
-             <div className="flex gap-2">
-               {selectedPlace.priority && (
-                 <div className="bg-amber-100 px-3 py-1 rounded-full text-xs font-bold text-amber-700 flex items-center gap-1">
-                   <Star className="w-3 h-3 fill-amber-700" /> Curator Pick
-                 </div>
-               )}
-               <button 
-                onClick={() => toggleFavorite(selectedPlace.id)}
-                className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
-                  isFav 
-                    ? 'bg-pink-100 text-pink-700 border-pink-200' 
-                    : 'bg-white text-slate-500 border-slate-200'
-                }`}
-               >
-                 <Heart className={`w-3 h-3 ${isFav ? 'fill-pink-700' : ''}`} />
-                 {isFav ? 'Favorited' : 'Favorite'}
-               </button>
-             </div>
+          {/* SECTION 1: Metadata Row - Distance, Category Tag, Favorite (CO3) */}
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            {/* Distance */}
+            <div className="bg-slate-100 px-3 py-1 rounded-full text-xs font-bold text-slate-600">
+              {formatDistance(distanceKm)} away
+            </div>
+            
+            {/* Category Tag - ALL PLACES show this (CO3) */}
+            <button
+              onClick={() => {
+                // Only allow management if user-added
+                if (selectedPlace.source === 'user') {
+                  setShowManageModal(true);
+                  analytics.categoryTagTapped(selectedPlace.name, selectedPlace.category);
+                }
+              }}
+              className={`
+                inline-flex items-center gap-1 px-2.5 py-1 rounded-xl 
+                text-xs font-semibold border transition-all
+                ${selectedPlace.source === 'user' 
+                  ? 'hover:scale-105 hover:shadow-sm active:scale-[0.98] cursor-pointer' 
+                  : 'cursor-default'
+                }
+                ${categoryStyles[selectedPlace.category].bg}
+                ${categoryStyles[selectedPlace.category].border}
+                ${categoryStyles[selectedPlace.category].text}
+              `}
+            >
+              <span className="text-sm">{categoryStyles[selectedPlace.category].icon}</span>
+              <span>{selectedPlace.category}</span>
+            </button>
+            
+            {/* Curator Pick badge */}
+            {selectedPlace.priority && (
+              <div className="bg-amber-100 px-3 py-1 rounded-full text-xs font-bold text-amber-700 flex items-center gap-1">
+                <Star className="w-3 h-3 fill-amber-700" /> Curator Pick
+              </div>
+            )}
+            
+            {/* Favorite button - pushed to right */}
+            <button 
+              onClick={() => toggleFavorite(selectedPlace.id)}
+              className={`ml-auto flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border ${
+                isFav 
+                  ? 'bg-pink-100 text-pink-700 border-pink-200' 
+                  : 'bg-white text-slate-500 border-slate-200'
+              }`}
+            >
+              <Heart className={`w-3 h-3 ${isFav ? 'fill-pink-700' : ''}`} />
+              {isFav ? 'Favorited' : 'Favorite'}
+            </button>
           </div>
 
-          {/* SECTION 2: PRIMARY ACTIONS - Save & Go Now (CO2: moved above fold) */}
+          {/* SECTION 2: PRIMARY ACTIONS - Save (only if unsaved) & Go Now (CO3: removed green status button) */}
           {(() => {
             // Check if this place is already saved
             const isAlreadySaved = selectedPlace.source === 'user' || userPlaces.some(
               p => p.googlePlaceId === selectedPlace?.googlePlaceId
             );
-            const savedPlace = userPlaces.find(p => p.googlePlaceId === selectedPlace?.googlePlaceId);
-            const savedCategory = savedPlace?.category || selectedPlace.category;
 
             return (
               <div className="space-y-3 mb-6 pb-6 border-b border-slate-100">
-                {!isAlreadySaved && selectedGoogleResult ? (
-                  // NOT SAVED: Show save button
+                {/* Save button - only shows for unsaved places */}
+                {!isAlreadySaved && selectedGoogleResult && (
                   <button
                     onClick={() => {
                       const suggestedCat = assignCategory(selectedGoogleResult.types);
@@ -1186,26 +1458,6 @@ export default function App() {
                     <Plus className="w-5 h-5" />
                     Save to Collection
                   </button>
-                ) : (
-                  // ALREADY SAVED: Show status and remove option
-                  <>
-                    <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold py-4 rounded-xl flex items-center justify-center gap-2">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                      <span>Saved in <span className="font-bold">{savedCategory}</span></span>
-                    </div>
-                    
-                    {selectedPlace.source === 'user' && (
-                      <button
-                        onClick={() => setShowDeleteModal(true)}
-                        className="w-full bg-white border border-slate-200 text-slate-600 font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200 active:scale-[0.98] transition-all"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Remove from Collection
-                      </button>
-                    )}
-                  </>
                 )}
 
                 {/* Go Now Button */}
@@ -1639,6 +1891,17 @@ export default function App() {
             setShowDuplicateModal(false);
             setSelectedPlace(null);
           }}
+        />
+      )}
+
+      {/* Collection Management Modal (CO3) */}
+      {showManageModal && selectedPlace && selectedPlace.source === 'user' && (
+        <CollectionManageModal
+          place={selectedPlace}
+          currentCategory={selectedPlace.category}
+          onChangeCategory={handleCategoryChange}
+          onRemove={handleRemoveFromModal}
+          onCancel={() => setShowManageModal(false)}
         />
       )}
 

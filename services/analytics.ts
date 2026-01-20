@@ -18,7 +18,8 @@ export type AnalyticsEvent =
   | { name: 'category_modal_shown'; data: { placeName: string; suggestedCategory: string } }
   | { name: 'category_changed'; data: { placeName: string; suggestedCategory: string; selectedCategory: string } }
   | { name: 'duplicate_detected'; data: { placeId: string; placeName: string; category: string } }
-  | { name: 'save_button_tapped'; data: { placeName: string; suggestedCategory: string } };
+  | { name: 'save_button_tapped'; data: { placeName: string; suggestedCategory: string } }
+  | { name: 'category_tag_tapped'; data: { placeName: string; currentCategory: string } };
 
 // Configuration
 const ANALYTICS_ENABLED = true;
@@ -143,6 +144,13 @@ export const analytics = {
     track({
       name: 'save_button_tapped',
       data: { placeName, suggestedCategory }
+    });
+  },
+
+  categoryTagTapped: (placeName: string, currentCategory: string) => {
+    track({
+      name: 'category_tag_tapped',
+      data: { placeName, currentCategory }
     });
   },
 };
