@@ -348,11 +348,14 @@ const CollectionManageModal: React.FC<{
   place: Place;
   currentCategory: Category;
   onChangeCategory: (newCategory: Category) => void;
-  onRemove: () => void;
+  onRemove?: () => void; // Optional - not present for curated places
   onCancel: () => void;
 }> = ({ place, currentCategory, onChangeCategory, onRemove, onCancel }) => {
   const [selectedCategory, setSelectedCategory] = useState<Category>(currentCategory);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  
+  // Check if this is a curated place (no source or source === 'curated')
+  const isCurated = place.source !== 'user';
   
   const categoryOptions: Array<{ value: Category; icon: string; label: string }> = [
     { value: 'Food', icon: '🍽️', label: 'Food' },
@@ -460,14 +463,30 @@ const CollectionManageModal: React.FC<{
             })}
           </div>
           
-          {/* Remove Button */}
-          <button
-            onClick={() => setShowRemoveConfirm(true)}
-            className="w-full bg-white border-2 border-red-200 text-red-600 font-semibold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 hover:border-red-300 active:scale-[0.98] transition-all mb-4"
-          >
-            <Trash2 className="w-4 h-4" />
-            Remove from Collection
-          </button>
+          {/* Remove Button OR Info Message */}
+          {!isCurated && onRemove ? (
+            // User-added places: Show remove button
+            <button
+              onClick={() => setShowRemoveConfirm(true)}
+              className="w-full bg-white border-2 border-red-200 text-red-600 font-semibold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 hover:border-red-300 active:scale-[0.98] transition-all mb-4"
+            >
+              <Trash2 className="w-4 h-4" />
+              Remove from Collection
+            </button>
+          ) : (
+            // Curated places: Show info message
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex gap-3">
+              <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-blue-900 mb-1">
+                  Curated Place
+                </p>
+                <p className="text-xs text-blue-700">
+                  You can change the category to organize this place differently, but curated places cannot be removed from your collection.
+                </p>
+              </div>
+            </div>
+          )}
           
           {/* Action Buttons */}
           <div className="flex gap-3">
@@ -779,10 +798,32 @@ export default function App() {
     ? (userLocation || HOTEL_COORDINATES) 
     : HOTEL_COORDINATES;
 
-  // Combine curated places with user-added places
+  // Category overrides for curated places (stored in localStorage)
+  const [categoryOverrides, setCategoryOverrides] = useState<Record<string, Category>>({});
+  
+  // Load category overrides on mount
+  useEffect(() => {
+    const savedOverrides = localStorage.getItem('amble_category_overrides');
+    if (savedOverrides) {
+      setCategoryOverrides(JSON.parse(savedOverrides));
+    }
+  }, []);
+  
+  // Apply category overrides to curated places
+  const applyCategorizationOverrides = (places: Place[]): Place[] => {
+    return places.map(place => {
+      if (categoryOverrides[place.id]) {
+        return { ...place, category: categoryOverrides[place.id] };
+      }
+      return place;
+    });
+  };
+
+  // Combine curated places with user-added places, applying overrides
   const allPlaces = useMemo(() => {
-    return [...PLACES, ...userPlaces];
-  }, [userPlaces]);
+    const curatedPlaces = applyCategorizationOverrides(PLACES);
+    return [...curatedPlaces, ...userPlaces];
+  }, [userPlaces, categoryOverrides]);
 
   const sortedPlaces = useMemo(() => {
     if (!selectedCategory) return [];
@@ -1081,7 +1122,7 @@ export default function App() {
     
     // Track if category was changed from suggestion
     if (confirmedCategory !== suggestedCategory) {
-      analytics.categoryChanged(googleResult.name, suggestedCategory, confirmedCategory);
+      analytics.categoryChanged(googleResult.name, suggestedCategory, confirmedCategory, 'user');
     }
     
     // Transform Google Place to our Place type
@@ -1171,22 +1212,32 @@ export default function App() {
 
   // CO3: Handle category change from management modal
   const handleCategoryChange = (newCategory: Category) => {
-    if (!selectedPlace || selectedPlace.source !== 'user') return;
+    if (!selectedPlace) return;
     
     const oldCategory = selectedPlace.category;
-    
-    // Update the place with new category
     const updatedPlace = { ...selectedPlace, category: newCategory };
+    const source = selectedPlace.source === 'user' ? 'user' : 'curated';
     
-    // Update in userPlaces
-    const updatedPlaces = userPlaces.map(p => 
-      p.id === selectedPlace.id ? updatedPlace : p
-    );
+    // Check if it's a user-added or curated place
+    if (selectedPlace.source === 'user') {
+      // User-added: Update in userPlaces
+      const updatedPlaces = userPlaces.map(p => 
+        p.id === selectedPlace.id ? updatedPlace : p
+      );
+      setUserPlaces(updatedPlaces);
+      localStorage.setItem('amble_user_places', JSON.stringify(updatedPlaces));
+      
+    } else {
+      // Curated: Store category override separately
+      const newOverrides = {
+        ...categoryOverrides,
+        [selectedPlace.id]: newCategory
+      };
+      setCategoryOverrides(newOverrides);
+      localStorage.setItem('amble_category_overrides', JSON.stringify(newOverrides));
+    }
     
-    setUserPlaces(updatedPlaces);
-    localStorage.setItem('amble_user_places', JSON.stringify(updatedPlaces));
-    
-    // Update selected place
+    // Update selected place state (affects UI immediately)
     setSelectedPlace(updatedPlace);
     
     // Close modal
@@ -1197,8 +1248,8 @@ export default function App() {
       message: `Moved to ${newCategory}!`,
     });
     
-    // Analytics
-    analytics.categoryChanged(selectedPlace.name, oldCategory, newCategory);
+    // Analytics - include source
+    analytics.categoryChanged(selectedPlace.name, oldCategory, newCategory, source);
   };
 
   // CO3: Handle remove from management modal
@@ -1389,22 +1440,18 @@ export default function App() {
               {formatDistance(distanceKm)} away
             </div>
             
-            {/* Category Tag - ALL PLACES show this (CO3) */}
+            {/* Category Tag - ALL PLACES can tap to manage (Bug #3 fix) */}
             <button
               onClick={() => {
-                // Only allow management if user-added
-                if (selectedPlace.source === 'user') {
-                  setShowManageModal(true);
-                  analytics.categoryTagTapped(selectedPlace.name, selectedPlace.category);
-                }
+                // Allow all places to open modal
+                setShowManageModal(true);
+                const source = selectedPlace.source === 'user' ? 'user' : 'curated';
+                analytics.categoryTagTapped(selectedPlace.name, selectedPlace.category, source);
               }}
               className={`
                 inline-flex items-center gap-1 px-2.5 py-1 rounded-xl 
                 text-xs font-semibold border transition-all
-                ${selectedPlace.source === 'user' 
-                  ? 'hover:scale-105 hover:shadow-sm active:scale-[0.98] cursor-pointer' 
-                  : 'cursor-default'
-                }
+                hover:scale-105 hover:shadow-sm active:scale-[0.98] cursor-pointer
                 ${categoryStyles[selectedPlace.category].bg}
                 ${categoryStyles[selectedPlace.category].border}
                 ${categoryStyles[selectedPlace.category].text}
@@ -1894,13 +1941,13 @@ export default function App() {
         />
       )}
 
-      {/* Collection Management Modal (CO3) */}
-      {showManageModal && selectedPlace && selectedPlace.source === 'user' && (
+      {/* Collection Management Modal (CO3 + Bug #3 fix - works for all places) */}
+      {showManageModal && selectedPlace && (
         <CollectionManageModal
           place={selectedPlace}
           currentCategory={selectedPlace.category}
           onChangeCategory={handleCategoryChange}
-          onRemove={handleRemoveFromModal}
+          onRemove={selectedPlace.source === 'user' ? handleRemoveFromModal : undefined}
           onCancel={() => setShowManageModal(false)}
         />
       )}

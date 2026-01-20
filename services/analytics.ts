@@ -16,10 +16,10 @@ export type AnalyticsEvent =
   | { name: 'place_removed'; data: { placeId: string; category: string } }
   | { name: 'search_error'; data: { errorType: string; errorMessage: string } }
   | { name: 'category_modal_shown'; data: { placeName: string; suggestedCategory: string } }
-  | { name: 'category_changed'; data: { placeName: string; suggestedCategory: string; selectedCategory: string } }
+  | { name: 'category_changed'; data: { placeName: string; fromCategory: string; toCategory: string; source: 'user' | 'curated' } }
   | { name: 'duplicate_detected'; data: { placeId: string; placeName: string; category: string } }
   | { name: 'save_button_tapped'; data: { placeName: string; suggestedCategory: string } }
-  | { name: 'category_tag_tapped'; data: { placeName: string; currentCategory: string } };
+  | { name: 'category_tag_tapped'; data: { placeName: string; currentCategory: string; source: 'user' | 'curated' } };
 
 // Configuration
 const ANALYTICS_ENABLED = true;
@@ -126,10 +126,10 @@ export const analytics = {
     });
   },
 
-  categoryChanged: (placeName: string, suggestedCategory: string, selectedCategory: string) => {
+  categoryChanged: (placeName: string, fromCategory: string, toCategory: string, source: 'user' | 'curated' = 'user') => {
     track({
       name: 'category_changed',
-      data: { placeName, suggestedCategory, selectedCategory }
+      data: { placeName, fromCategory, toCategory, source }
     });
   },
 
@@ -147,10 +147,10 @@ export const analytics = {
     });
   },
 
-  categoryTagTapped: (placeName: string, currentCategory: string) => {
+  categoryTagTapped: (placeName: string, currentCategory: string, source: 'user' | 'curated' = 'user') => {
     track({
       name: 'category_tag_tapped',
-      data: { placeName, currentCategory }
+      data: { placeName, currentCategory, source }
     });
   },
 };
