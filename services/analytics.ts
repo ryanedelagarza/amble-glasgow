@@ -17,7 +17,8 @@ export type AnalyticsEvent =
   | { name: 'search_error'; data: { errorType: string; errorMessage: string } }
   | { name: 'category_modal_shown'; data: { placeName: string; suggestedCategory: string } }
   | { name: 'category_changed'; data: { placeName: string; suggestedCategory: string; selectedCategory: string } }
-  | { name: 'duplicate_detected'; data: { placeId: string; placeName: string; category: string } };
+  | { name: 'duplicate_detected'; data: { placeId: string; placeName: string; category: string } }
+  | { name: 'save_button_tapped'; data: { placeName: string; suggestedCategory: string } };
 
 // Configuration
 const ANALYTICS_ENABLED = true;
@@ -135,6 +136,13 @@ export const analytics = {
     track({
       name: 'duplicate_detected',
       data: { placeId, placeName, category }
+    });
+  },
+
+  saveButtonTapped: (placeName: string, suggestedCategory: string) => {
+    track({
+      name: 'save_button_tapped',
+      data: { placeName, suggestedCategory }
     });
   },
 };

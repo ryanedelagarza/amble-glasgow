@@ -217,40 +217,51 @@ const CategoryConfirmModal: React.FC<{
       {/* Modal */}
       <div className="relative bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
         <div className="flex flex-col">
+          {/* Header */}
           <h3 className="text-xl font-bold text-slate-900 mb-2">Add to Collection?</h3>
-          <p className="text-sm text-slate-500 mb-4">
-            <span className="font-semibold text-slate-700">{placeName}</span> will be added to:
+          <p className="text-sm text-slate-600 mb-4">
+            <span className="font-semibold text-slate-800">{placeName}</span> will be added to:
           </p>
           
-          {/* Category Selection */}
+          {/* Category Selection Grid - CO1 Issue 2: Clear visual hierarchy */}
           <div className="grid grid-cols-2 gap-3 mb-6">
-            {(['Food', 'Coffee', 'Shopping', 'Sites'] as Category[]).map(cat => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`py-3 px-4 rounded-xl font-bold text-sm transition-all ${
-                  selectedCategory === cat
-                    ? 'bg-slate-900 text-white shadow-md'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
+            {(['Food', 'Coffee', 'Shopping', 'Sites'] as Category[]).map(cat => {
+              const isSelected = selectedCategory === cat;
+              
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`
+                    py-4 px-4 rounded-xl font-semibold text-sm transition-all
+                    ${isSelected 
+                      ? 'bg-slate-900 text-white shadow-lg scale-105' 
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-95'
+                    }
+                  `}
+                >
+                  {cat}
+                </button>
+              );
+            })}
           </div>
           
+          {/* Action Buttons - CO1 Issue 2: Ghost Cancel, Amber Primary */}
           <div className="flex gap-3">
+            {/* Cancel - Ghost/Outlined Style */}
             <button
               onClick={onCancel}
-              className="flex-1 py-3 px-4 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+              className="flex-1 py-3 px-4 bg-white border-2 border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 hover:border-slate-300 active:scale-95 transition-all"
             >
               Cancel
             </button>
+            
+            {/* Add - Primary Action with Brand Color */}
             <button
               onClick={() => onConfirm(selectedCategory)}
-              className="flex-1 py-3 px-4 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-colors"
+              className="flex-1 py-3 px-4 bg-amber-500 text-white font-bold rounded-xl hover:bg-amber-600 shadow-md hover:shadow-lg active:scale-95 transition-all"
             >
-              Add to {selectedCategory}
+              Add Place
             </button>
           </div>
         </div>
@@ -502,6 +513,9 @@ export default function App() {
   const [selectedResult, setSelectedResult] = useState<GooglePlaceResult | null>(null);
   const [suggestedCategory, setSuggestedCategory] = useState<Category>('Sites');
   
+  // Google result reference for save flow (CO1 - Issue 1 fix)
+  const [selectedGoogleResult, setSelectedGoogleResult] = useState<GooglePlaceResult | null>(null);
+  
   // Duplicate detection modal state (Bug #2 fix)
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   
@@ -527,7 +541,6 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize
   useEffect(() => {
@@ -807,85 +820,104 @@ export default function App() {
     }
   };
 
-  // Debounced search - triggers 300ms after user stops typing
+  // CO1 Issue 3: Simple input handler - no auto-search, require explicit trigger
   const handleSearchInputChange = (value: string) => {
     setSearchQuery(value.slice(0, 100));
     setSearchError(null);
-    
-    // Clear previous timeout
-    if (searchDebounceRef.current) {
-      clearTimeout(searchDebounceRef.current);
-    }
-    
-    // Only auto-search if query is long enough
-    if (value.trim().length >= 2) {
-      searchDebounceRef.current = setTimeout(() => {
-        handleSearch();
-      }, 300);
-    }
+    // No auto-search - user must press Enter or click Search button
   };
-
-  // Cleanup debounce timer on unmount
-  useEffect(() => {
-    return () => {
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
-      }
-    };
-  }, []);
 
   const handleSelectResult = (result: GooglePlaceResult, position: number) => {
     // Track result selection
     analytics.resultSelected(position + 1, result.place_id, result.name);
     
-    // Check if place already exists (Bug #2 fix)
+    // Check if place already exists
     const existingPlace = allPlaces.find(p => p.googlePlaceId === result.place_id);
     if (existingPlace) {
       // Track duplicate detection
       analytics.duplicateDetected(existingPlace.id, existingPlace.name, existingPlace.category);
       
-      // Show friendly duplicate modal instead of error
+      // Navigate directly to detail view for existing place
       setSelectedPlace(existingPlace);
-      setShowDuplicateModal(true);
+      setSelectedGoogleResult(null); // Clear since it's already saved
+      navigateToView('DETAIL', { preserveSearchState: true });
+      
+      // Trigger vibe check
+      setVibeCheckResult(null);
+      setVibeCheckLoading(true);
+      getVibeCheck(existingPlace, userBio).then(vibe => {
+        setVibeCheckResult(vibe);
+        setVibeCheckLoading(false);
+      });
       return;
     }
     
-    // Show category confirmation modal instead of immediately adding (Bug #1 fix)
+    // CO1 Issue 1 Fix: Navigate to detail view for preview (don't show modal)
+    // Transform result to temporary Place for preview
     const category = assignCategory(result.types);
-    setSelectedResult(result);
-    setSuggestedCategory(category);
-    setShowCategoryModal(true);
+    const tempPlace: Place = {
+      id: `preview-${result.place_id}`,
+      name: result.name,
+      category: category,
+      description: result.formatted_address,
+      address: result.formatted_address,
+      coordinates: {
+        lat: result.geometry.location.lat,
+        lng: result.geometry.location.lng,
+      },
+      priority: false,
+      isOpen: result.opening_hours?.open_now,
+      images: result.photos && result.photos.length > 0
+        ? [getPhotoUrl(result.photos[0].photo_reference, 800)]
+        : ['https://images.unsplash.com/photo-1486718448742-166226480961?auto=format&fit=crop&w=800&q=80'],
+      source: undefined, // Not saved yet - this is a preview
+      googlePlaceId: result.place_id,
+    };
     
-    // Track modal shown
-    analytics.categoryModalShown(result.name, category);
+    // Store Google result reference for potential save
+    setSelectedGoogleResult(result);
+    setSelectedPlace(tempPlace);
+    
+    // Navigate to detail view with search state preserved
+    navigateToView('DETAIL', { preserveSearchState: true });
+    
+    // Trigger vibe check for preview
+    setVibeCheckResult(null);
+    setVibeCheckLoading(true);
+    getVibeCheck(tempPlace, userBio).then(vibe => {
+      setVibeCheckResult(vibe);
+      setVibeCheckLoading(false);
+    });
   };
 
   const handleConfirmAdd = (confirmedCategory: Category) => {
-    if (!selectedResult) return;
+    // CO1: Use selectedGoogleResult (from save button) or fall back to selectedResult
+    const googleResult = selectedGoogleResult || selectedResult;
+    if (!googleResult) return;
     
     // Track if category was changed from suggestion
     if (confirmedCategory !== suggestedCategory) {
-      analytics.categoryChanged(selectedResult.name, suggestedCategory, confirmedCategory);
+      analytics.categoryChanged(googleResult.name, suggestedCategory, confirmedCategory);
     }
     
     // Transform Google Place to our Place type
     const newPlace: Place = {
-      id: `user-${selectedResult.place_id}`,
-      name: selectedResult.name,
+      id: `user-${googleResult.place_id}`,
+      name: googleResult.name,
       category: confirmedCategory,
-      description: selectedResult.formatted_address,
-      address: selectedResult.formatted_address,
+      description: googleResult.formatted_address,
+      address: googleResult.formatted_address,
       coordinates: {
-        lat: selectedResult.geometry.location.lat,
-        lng: selectedResult.geometry.location.lng,
+        lat: googleResult.geometry.location.lat,
+        lng: googleResult.geometry.location.lng,
       },
       priority: false,
-      isOpen: selectedResult.opening_hours?.open_now,
-      images: selectedResult.photos && selectedResult.photos.length > 0
-        ? [getPhotoUrl(selectedResult.photos[0].photo_reference, 800)]
+      isOpen: googleResult.opening_hours?.open_now,
+      images: googleResult.photos && googleResult.photos.length > 0
+        ? [getPhotoUrl(googleResult.photos[0].photo_reference, 800)]
         : ['https://images.unsplash.com/photo-1486718448742-166226480961?auto=format&fit=crop&w=800&q=80'],
       source: 'user',
-      googlePlaceId: selectedResult.place_id,
+      googlePlaceId: googleResult.place_id,
       addedAt: new Date().toISOString(),
     };
     
@@ -897,13 +929,13 @@ export default function App() {
     // Track place added
     analytics.placeAdded(newPlace.id, confirmedCategory);
     
-    // Close modal and clear selected result
+    // Close modal and clear references
     setShowCategoryModal(false);
     setSelectedResult(null);
+    setSelectedGoogleResult(null);
     
-    // Navigate to detail view with context preserved (Bug #3 fix)
+    // Update selectedPlace to the now-saved place (stay in detail view)
     setSelectedPlace(newPlace);
-    navigateToView('DETAIL', { preserveSearchState: true });
     
     // Show success toast with option to add another
     setToast({
@@ -1125,15 +1157,6 @@ export default function App() {
                  <Heart className={`w-3 h-3 ${isFav ? 'fill-pink-700' : ''}`} />
                  {isFav ? 'Favorited' : 'Favorite'}
                </button>
-               {selectedPlace.source === 'user' && (
-                 <button 
-                   onClick={() => setShowDeleteModal(true)}
-                   className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold border bg-white text-red-500 border-red-200 hover:bg-red-50"
-                 >
-                   <Trash2 className="w-3 h-3" />
-                   Remove
-                 </button>
-               )}
              </div>
           </div>
 
@@ -1155,6 +1178,56 @@ export default function App() {
               )}
             </div>
           </div>
+
+          {/* CO1 Issue 1: Save to Collection section */}
+          {(() => {
+            // Check if this place is already saved
+            const isAlreadySaved = selectedPlace.source === 'user' || userPlaces.some(
+              p => p.googlePlaceId === selectedPlace?.googlePlaceId
+            );
+            const savedPlace = userPlaces.find(p => p.googlePlaceId === selectedPlace?.googlePlaceId);
+            const savedCategory = savedPlace?.category || selectedPlace.category;
+
+            return (
+              <div className="mb-6 pb-6 border-b border-slate-100">
+                {!isAlreadySaved && selectedGoogleResult ? (
+                  // NOT SAVED: Show save button
+                  <button
+                    onClick={() => {
+                      const suggestedCat = assignCategory(selectedGoogleResult.types);
+                      setSuggestedCategory(suggestedCat);
+                      setShowCategoryModal(true);
+                      analytics.saveButtonTapped(selectedPlace.name, suggestedCat);
+                    }}
+                    className="w-full bg-white border-2 border-slate-300 text-slate-700 font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-slate-50 hover:border-slate-400 active:scale-[0.98] transition-all"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Save to Collection
+                  </button>
+                ) : (
+                  // ALREADY SAVED: Show status and remove option
+                  <>
+                    <div className="w-full bg-slate-100 text-slate-700 font-semibold py-4 rounded-xl flex items-center justify-center gap-2 mb-3">
+                      <svg className="w-5 h-5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      <span>Saved in <span className="font-bold">{savedCategory}</span></span>
+                    </div>
+                    
+                    {selectedPlace.source === 'user' && (
+                      <button
+                        onClick={() => setShowDeleteModal(true)}
+                        className="w-full bg-white border border-slate-200 text-slate-600 font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200 active:scale-[0.98] transition-all"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Remove from Collection
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           <div className="space-y-3">
              <a 
@@ -1348,16 +1421,27 @@ export default function App() {
             </div>
           )}
 
-          {/* Initial State - No search yet */}
+          {/* Initial State - No search yet (CO1 Issue 3: improved empty state with tips) */}
           {!isSearching && !searchError && searchResults.length === 0 && searchQuery.trim().length < 2 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mb-4">
-                <Plus className="w-10 h-10 text-amber-600" />
+            <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+                <Search className="w-8 h-8 text-amber-600" />
               </div>
-              <h3 className="font-bold text-slate-900 mb-2">Discover new places</h3>
-              <p className="text-sm text-slate-500 max-w-xs">
-                Search for a place you've heard about and add it to your Glasgow collection
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Discover New Places</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                Search for places you've heard about and add them to your collection.
               </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {['Coffee shops', 'Design studios', 'Local restaurants', 'Art galleries'].map(term => (
+                  <button
+                    key={term}
+                    onClick={() => setSearchQuery(term)}
+                    className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-full hover:bg-slate-200 transition-colors"
+                  >
+                    {term}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
